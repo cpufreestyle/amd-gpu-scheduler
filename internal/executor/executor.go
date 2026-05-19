@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -67,23 +68,27 @@ func (e *Executor) SubmitTask(task *types.Task, gpuID string) error {
 
 	// Create log file
 	logFile := filepath.Join(logDir, fmt.Sprintf("task-%s-%d.log", task.ID, time.Now().Unix()))
-	f, err := os.Create(logFile)
-	if err != nil {
-		return fmt.Errorf("failed to create log file: %v", err)
-	}
-	f.Close()
 
-	// Build command based on task type
+	// Build command
 	var cmd *exec.Cmd
-	switch task.Type {
-	case "training":
-		cmd = e.buildTrainingCommand(task, gpuID)
-	case "inference":
-		cmd = e.buildInferenceCommand(task, gpuID)
-	case "compute":
-		cmd = e.buildComputeCommand(task, gpuID)
-	default:
-		cmd = e.buildDefaultCommand(task, gpuID)
+	if task.Command != "" {
+		// Use appropriate shell based on OS
+		if runtime.GOOS == "windows" {
+			cmd = exec.Command("cmd.exe", "/c", task.Command)
+		} else {
+			cmd = exec.Command("sh", "-c", task.Command)
+		}
+	} else {
+		switch task.Type {
+		case "training":
+			cmd = e.buildTrainingCommand(task, gpuID)
+		case "inference":
+			cmd = e.buildInferenceCommand(task, gpuID)
+		case "compute":
+			cmd = e.buildComputeCommand(task, gpuID)
+		default:
+			cmd = e.buildDefaultCommand(task, gpuID)
+		}
 	}
 
 	if cmd == nil {
@@ -94,8 +99,12 @@ func (e *Executor) SubmitTask(task *types.Task, gpuID string) error {
 	cmd.Env = e.buildEnv(task, gpuID)
 
 	// Redirect output to log file
-	cmd.Stdout, _ = os.OpenFile(logFile, os.O_APPEND|os.O_WRONLY, 0644)
-	cmd.Stderr, _ = os.OpenFile(logFile, os.O_APPEND|os.O_WRONLY, 0644)
+	logFH, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %v", err)
+	}
+	cmd.Stdout = logFH
+	cmd.Stderr = logFH
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
@@ -209,11 +218,19 @@ func (e *Executor) monitorTask(taskID string, cmd *exec.Cmd) {
 			log.Printf("❌ Task %s failed: %v", taskID, err)
 			running.Task.Status = "failed"
 			running.Task.Error = err.Error()
-			running.Task.ExitCode = 1
+			if cmd.ProcessState != nil {
+				running.Task.ExitCode = cmd.ProcessState.ExitCode()
+			} else {
+				running.Task.ExitCode = 1
+			}
 		} else {
 			log.Printf("✅ Task %s completed", taskID)
 			running.Task.Status = "completed"
-			running.Task.ExitCode = 0
+			if cmd.ProcessState != nil {
+				running.Task.ExitCode = cmd.ProcessState.ExitCode()
+			} else {
+				running.Task.ExitCode = 0
+			}
 		}
 	}
 }
