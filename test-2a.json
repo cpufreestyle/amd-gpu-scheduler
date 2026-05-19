@@ -1,0 +1,7 @@
+{
+  "name": "test-2a-training",
+  "type": "training",
+  "command": "echo Training task on GPU && ping -n 2 127.0.0.1 > nul",
+  "vram_mb": 2048,
+  "timeout": 15
+}

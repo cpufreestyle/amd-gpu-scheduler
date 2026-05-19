@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/amd-gpu-scheduler/pkg/types"
@@ -32,6 +33,7 @@ type RunningTask struct {
 	StartTime time.Time
 	GPUID    string
 	LogFile  string
+	Cancel   context.CancelFunc
 }
 
 var globalExecutor *Executor
@@ -106,8 +108,25 @@ func (e *Executor) SubmitTask(task *types.Task, gpuID string) error {
 	cmd.Stdout = logFH
 	cmd.Stderr = logFH
 
+	// Set up timeout context
+	var taskCtx context.Context
+	var taskCancel context.CancelFunc
+	if task.Timeout > 0 {
+		taskCtx, taskCancel = context.WithTimeout(context.Background(), time.Duration(task.Timeout)*time.Second)
+	} else {
+		taskCtx, taskCancel = context.WithCancel(context.Background())
+	}
+
+	// On Windows, create process group so we can kill the entire process tree
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+		}
+	}
+
 	// Start the command
 	if err := cmd.Start(); err != nil {
+		taskCancel()
 		return fmt.Errorf("failed to start task: %v", err)
 	}
 
@@ -120,6 +139,7 @@ func (e *Executor) SubmitTask(task *types.Task, gpuID string) error {
 		StartTime: now,
 		GPUID:    gpuID,
 		LogFile:  logFile,
+		Cancel:   taskCancel,
 	}
 	e.running[task.ID] = runningTask
 
@@ -129,11 +149,11 @@ func (e *Executor) SubmitTask(task *types.Task, gpuID string) error {
 	task.StartTime = &now
 	task.LogFile = logFile
 
-	log.Printf("✅ Started task %s (PID: %d) on GPU %s", task.ID, runningTask.PID, gpuID)
+	log.Printf("✅ Started task %s (PID: %d) on GPU %s (timeout: %ds)", task.ID, runningTask.PID, gpuID, task.Timeout)
 	log.Printf("   Log: %s", logFile)
 
 	// Monitor task completion in background
-	go e.monitorTask(task.ID, cmd)
+	go e.monitorTask(task.ID, cmd, taskCtx, taskCancel)
 
 	return nil
 }
@@ -141,7 +161,7 @@ func (e *Executor) SubmitTask(task *types.Task, gpuID string) error {
 // buildTrainingCommand builds command for training tasks
 func (e *Executor) buildTrainingCommand(task *types.Task, gpuID string) *exec.Cmd {
 	if task.Command != "" {
-		return exec.Command("sh", "-c", task.Command)
+		return e.buildCommandByOS(task.Command)
 	}
 	// Default: simulate training with GPU stress
 	return exec.Command("nvidia-smi", "nvlink", "-s")
@@ -150,7 +170,7 @@ func (e *Executor) buildTrainingCommand(task *types.Task, gpuID string) *exec.Cm
 // buildInferenceCommand builds command for inference tasks
 func (e *Executor) buildInferenceCommand(task *types.Task, gpuID string) *exec.Cmd {
 	if task.Command != "" {
-		return exec.Command("sh", "-c", task.Command)
+		return e.buildCommandByOS(task.Command)
 	}
 	// Default: query GPU status
 	if strings.HasPrefix(gpuID, "0") {
@@ -162,7 +182,7 @@ func (e *Executor) buildInferenceCommand(task *types.Task, gpuID string) *exec.C
 // buildComputeCommand builds command for general compute tasks
 func (e *Executor) buildComputeCommand(task *types.Task, gpuID string) *exec.Cmd {
 	if task.Command != "" {
-		return exec.Command("sh", "-c", task.Command)
+		return e.buildCommandByOS(task.Command)
 	}
 	// Default: GPU compute test
 	return exec.Command("nvidia-smi", "nvlink", "-s")
@@ -171,9 +191,17 @@ func (e *Executor) buildComputeCommand(task *types.Task, gpuID string) *exec.Cmd
 // buildDefaultCommand builds default command
 func (e *Executor) buildDefaultCommand(task *types.Task, gpuID string) *exec.Cmd {
 	if task.Command != "" {
-		return exec.Command("sh", "-c", task.Command)
+		return e.buildCommandByOS(task.Command)
 	}
 	return exec.Command("echo", fmt.Sprintf("Task %s running on GPU %s", task.ID, gpuID))
+}
+
+// buildCommandByOS builds command with OS-appropriate shell
+func (e *Executor) buildCommandByOS(command string) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.Command("cmd.exe", "/c", command)
+	}
+	return exec.Command("sh", "-c", command)
 }
 
 // buildEnv builds environment variables for GPU isolation
@@ -203,18 +231,64 @@ func (e *Executor) buildEnv(task *types.Task, gpuID string) []string {
 	return newEnv
 }
 
+// killProcessTree kills a process and all its children
+func (e *Executor) killProcessTree(pid int) error {
+	// Use taskkill on all platforms for simplicity
+	killCmd := exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid))
+	if err := killCmd.Run(); err != nil {
+		// Fallback: try direct process kill
+		proc, pErr := os.FindProcess(pid)
+		if pErr == nil {
+			proc.Kill()
+		}
+	}
+	return nil
+}
+
 // monitorTask monitors a running task and updates status on completion
-func (e *Executor) monitorTask(taskID string, cmd *exec.Cmd) {
-	err := cmd.Wait()
-	
+func (e *Executor) monitorTask(taskID string, cmd *exec.Cmd, ctx context.Context, cancel context.CancelFunc) {
+	defer cancel()
+
+	// Wait for command to finish or context timeout
+	doneCh := make(chan error, 1)
+	go func() {
+		doneCh <- cmd.Wait()
+	}()
+
+	var err error
+	select {
+	case err = <-doneCh:
+		// Command finished normally
+	case <-ctx.Done():
+		// Timeout or cancellation - kill entire process tree
+		if ctx.Err() == context.DeadlineExceeded {
+			e.killProcessTree(cmd.Process.Pid)
+			<-doneCh // Wait for Wait() to return after Kill
+			err = fmt.Errorf("task timed out")
+		} else {
+			e.killProcessTree(cmd.Process.Pid)
+			<-doneCh
+			err = fmt.Errorf("task cancelled")
+		}
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if running, exists := e.running[taskID]; exists {
 		now := time.Now()
 		running.Task.EndTime = &now
-		
-		if err != nil {
+
+		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("⏰ Task %s timed out", taskID)
+			running.Task.Status = "timeout"
+			running.Task.Error = "task exceeded timeout limit"
+			if cmd.ProcessState != nil {
+				running.Task.ExitCode = cmd.ProcessState.ExitCode()
+			} else {
+				running.Task.ExitCode = -1
+			}
+		} else if err != nil {
 			log.Printf("❌ Task %s failed: %v", taskID, err)
 			running.Task.Status = "failed"
 			running.Task.Error = err.Error()
@@ -253,8 +327,8 @@ func (e *Executor) StopTask(taskID string) error {
 		return fmt.Errorf("task %s is not running", taskID)
 	}
 
-	// Kill the process
-	if err := running.Cmd.Process.Kill(); err != nil {
+	// Kill the process tree
+	if err := e.killProcessTree(running.PID); err != nil {
 		return fmt.Errorf("failed to kill task %s: %v", taskID, err)
 	}
 
@@ -300,10 +374,8 @@ func (e *Executor) Shutdown() {
 
 	log.Println("🛑 Shutting down executor...")
 	for taskID, running := range e.running {
-		if running.Cmd.Process != nil {
-			running.Cmd.Process.Kill()
-			log.Printf("   Killed task %s", taskID)
-		}
+		e.killProcessTree(running.PID)
+		log.Printf("   Killed task %s", taskID)
 	}
 	e.cancel()
 }

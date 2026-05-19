@@ -1,0 +1,7 @@
+{
+  "name": "test-windows-cmd",
+  "type": "inference",
+  "command": "echo Hello from Windows scheduler && timeout /t 2",
+  "vram_mb": 1024,
+  "timeout": 10
+}
