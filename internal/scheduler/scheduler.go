@@ -2,10 +2,12 @@ package scheduler
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/amd-gpu-scheduler/internal/executor"
 	"github.com/amd-gpu-scheduler/pkg/types"
 )
 
@@ -109,26 +111,27 @@ func (s *Scheduler) ListGPUs() []*types.GPUSnapshot {
 }
 
 // SubmitTask submits a new task for scheduling
-func (s *Scheduler) SubmitTask(name, taskType string, priority, gpuReq int, vramMB int) (string, error) {
+func (s *Scheduler) SubmitTask(task *types.Task) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Create task
-	task := &types.Task{
-		ID:       fmt.Sprintf("task-%d", len(s.pendingTasks)+len(s.runningTasks)+1),
-		Name:     name,
-		Type:     taskType,
-		Priority: priority,
-		GPUReq:   gpuReq,
-		Status:   "pending",
+	// Generate task ID if not set
+	if task.ID == "" {
+		task.ID = fmt.Sprintf("task-%d", len(s.pendingTasks)+len(s.runningTasks)+1)
 	}
+	task.Status = "pending"
 
 	// Build scheduling criteria
+	vramMB := 4096 // default
+	if task.VRAMMB > 0 {
+		vramMB = task.VRAMMB
+	}
+	
 	criteria := &types.SchedulingCriteria{
 		VRAMRequiredMB: vramMB,
 		PreferredGPU:   "", // No preference by default
-		TaskType:      taskType,
-		Priority:      priority,
+		TaskType:      task.Type,
+		Priority:      task.Priority,
 		Policy:        s.defaultPolicy,
 	}
 
@@ -148,6 +151,17 @@ func (s *Scheduler) SubmitTask(name, taskType string, priority, gpuReq int, vram
 			assignedGPU.Usage.UsedVRAMMB += vramMB
 			assignedGPU.Usage.RunningTasks++
 			assignedGPU.Usage.LastUpdated = time.Now()
+		}
+		
+		// Actually execute the task on GPU
+		exec := executor.GetExecutor()
+		if err := exec.SubmitTask(task, result.AssignedGPU.Info.ID); err != nil {
+			log.Printf("⚠️  Failed to execute task %s: %v", task.ID, err)
+			// Mark task as failed but keep it in running tasks
+			task.Status = "failed"
+			task.Error = err.Error()
+		} else {
+			log.Printf("✅ Task %s submitted for execution on GPU %s", task.ID, result.AssignedGPU.Info.ID)
 		}
 	} else {
 		s.pendingTasks = append(s.pendingTasks, task)
@@ -215,35 +229,35 @@ func (s *Scheduler) scheduleLocked(task *types.Task, criteria *types.SchedulingC
 func calculateScore(gpu *types.GPUSnapshot, criteria *types.SchedulingCriteria, gpuCount int) float64 {
 	score := 0.0
 
-	// 1. VRAM 分数 (30% weight)
-	// 可用 VRAM 越多，分数越高
+	// 1. VRAM score (30% weight)
+	// More free VRAM = higher score
 	vramScore := float64(gpu.FreeVRAM()) / float64(gpu.Info.VRAMMB) * 30
 	score += vramScore
 
-	// 2. 利用率分数 (25% weight)
-	// GPU 利用率越低，分数越高
+	// 2. Utilization score (25% weight)
+	// Lower GPU utilization = higher score
 	utilScore := (100.0 - gpu.Usage.Utilization) / 100.0 * 25
 	score += utilScore
 
-	// 3. GPU 类型分数 (20% weight)
+	// 3. GPU type score (20% weight)
 	gpuTypeScore := 15.0
 	switch criteria.TaskType {
 	case "training":
-		// 训练任务优先 NVIDIA
+		// Training tasks prefer NVIDIA
 		if gpu.Info.Type == types.GPUTypeNVIDIA {
 			gpuTypeScore = 18.0
 		} else {
 			gpuTypeScore = 15.0
 		}
 	case "inference":
-		// 推理任务两者皆可，AMD 性价比高
+		// Inference tasks can use both, AMD has better price-performance
 		if gpu.Info.Type == types.GPUTypeAMD {
 			gpuTypeScore = 18.0
 		} else {
 			gpuTypeScore = 15.0
 		}
 	case "compute":
-		// 计算任务优先 NVIDIA
+		// Compute tasks prefer NVIDIA
 		if gpu.Info.Type == types.GPUTypeNVIDIA {
 			gpuTypeScore = 20.0
 		} else {
@@ -254,11 +268,11 @@ func calculateScore(gpu *types.GPUSnapshot, criteria *types.SchedulingCriteria, 
 	}
 	score += gpuTypeScore
 
-	// 4. 优先级分数 (15% weight)
+	// 4. Priority score (15% weight)
 	priorityScore := float64(criteria.Priority) / 10.0 * 15
 	score += priorityScore
 
-	// 5. 负载均衡分数 (10% weight)
+	// 5. Load balance score (10% weight)
 	loadBalanceScore := 5.0
 	switch criteria.Policy {
 	case types.PolicyBinpack:

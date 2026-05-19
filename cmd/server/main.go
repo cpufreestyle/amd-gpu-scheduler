@@ -61,43 +61,49 @@ func main() {
 	{
 		// 提交任务
 		tasks.POST("", func(c *gin.Context) {
-			var req struct {
-				Name     string `json:"name"`
-				Type     string `json:"type"`
-				Priority int    `json:"priority"`
-				GPUReq   int    `json:"gpu_req"`
-				VRAMMB   int    `json:"vram_mb"`
-				Policy   string `json:"policy"`
-			}
+			var req types.TaskRequest
 			if err := c.ShouldBindJSON(&req); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
 
 			// 设置调度策略
-				if req.Policy != "" {
+			if req.Policy != "" {
 				sched.SetDefaultPolicy(types.SchedulingPolicy(req.Policy))
 			}
 
-			taskID, err := sched.SubmitTask(req.Name, req.Type, req.Priority, req.GPUReq, req.VRAMMB)
+			task := &types.Task{
+				Name:     req.Name,
+				Type:     req.Type,
+				Priority: req.Priority,
+				GPUReq:   req.GPUReq,
+				VRAMMB:   req.VRAMMB,
+				Command:  req.Command,
+				Args:     req.Args,
+				Env:      req.Env,
+				WorkDir:  req.WorkDir,
+				Timeout:  req.Timeout,
+			}
+
+			_, err := sched.SubmitTask(task)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
 
 			// 获取任务详情
-			var task *types.Task
+			var createdTask *types.Task
 			for _, t := range sched.ListTasks() {
-				if t.ID == taskID {
-					task = t
+				if t.ID == task.ID {
+					createdTask = t
 					break
 				}
 			}
 
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
-				"task_id": taskID,
-				"task":    task,
+				"task_id": task.ID,
+				"task":    createdTask,
 				"policy":  sched.GetDefaultPolicy(),
 			})
 		})
@@ -141,6 +147,28 @@ func main() {
 					"error":   "Task not found",
 				})
 			}
+		})
+		
+		// 停止运行中的任务
+		tasks.POST("/:id/stop", func(c *gin.Context) {
+			taskID := c.Param("id")
+			// TODO: call executor to stop task
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": "Task stop requested",
+				"task_id": taskID,
+			})
+		})
+		
+		// 获取任务日志
+		tasks.GET("/:id/log", func(c *gin.Context) {
+			taskID := c.Param("id")
+			// TODO: return task log file content
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"task_id": taskID,
+				"log":    "Task log content...",
+			})
 		})
 	}
 
@@ -198,8 +226,8 @@ func main() {
 		schedAPI.GET("/policy", func(c *gin.Context) {
 			policy := sched.GetDefaultPolicy()
 			c.JSON(http.StatusOK, gin.H{
-				"success":     true,
-				"policy":      policy,
+				"success":      true,
+				"policy":       policy,
 				"description": getPolicyDescription(policy),
 			})
 		})
@@ -215,8 +243,8 @@ func main() {
 			}
 			sched.SetDefaultPolicy(types.SchedulingPolicy(req.Policy))
 			c.JSON(http.StatusOK, gin.H{
-				"success":     true,
-				"policy":      req.Policy,
+				"success":      true,
+				"policy":       req.Policy,
 				"description": getPolicyDescription(types.SchedulingPolicy(req.Policy)),
 			})
 		})
@@ -235,12 +263,33 @@ func main() {
 				}
 			}
 			c.JSON(http.StatusOK, gin.H{
-				"success":      true,
-				"total_tasks":  len(tasks),
+				"success":       true,
+				"total_tasks":   len(tasks),
 				"pending_tasks": pendingCount,
 				"running_tasks": runningCount,
-				"total_gpus":   len(gpus),
-				"policy":       sched.GetDefaultPolicy(),
+				"total_gpus":    len(gpus),
+				"policy":        sched.GetDefaultPolicy(),
+			})
+		})
+	}
+	
+	// 执行器 API
+	execAPI := r.Group("/api/executor")
+	{
+		// 列出所有运行中的任务
+		execAPI.GET("/running", func(c *gin.Context) {
+			// TODO: call executor to list running tasks
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"tasks":   []string{},
+			})
+		})
+		
+		// 获取执行器状态
+		execAPI.GET("/status", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"status":  "running",
 			})
 		})
 	}
@@ -253,6 +302,7 @@ func main() {
 	log.Printf("   Tasks:      http://localhost%s/api/tasks", addr)
 	log.Printf("   GPUs:       http://localhost%s/api/gpus", addr)
 	log.Printf("   Scheduler:  http://localhost%s/api/scheduler", addr)
+	log.Printf("   Executor:   http://localhost%s/api/executor", addr)
 	log.Printf("")
 	
 	if err := r.Run(addr); err != nil {
