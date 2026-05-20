@@ -1,4 +1,4 @@
-module github.com/amd-gpu-scheduler
+module github.com/hybrid-gpu-scheduler
 
 go 1.26.1
 

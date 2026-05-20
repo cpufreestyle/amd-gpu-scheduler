@@ -1,4 +1,4 @@
-# 🎮 AMD GPU Scheduler
+﻿# 🎮 AMD GPU Scheduler
 
 混合 GPU 智能调度器 — 支持 NVIDIA + AMD 异构 GPU 环境的任务调度与管理。
 
@@ -15,7 +15,7 @@
 ## 🏗️ Architecture
 
 ```
-amd-gpu-scheduler/
+hybrid-gpu-scheduler/
 ├── cmd/server/          # HTTP 服务器入口
 │   ├── main.go          # 路由、中间件、API 注册
 │   └── preempt_api.go   # 抢占式调度 API
@@ -60,7 +60,7 @@ go build -o scheduler ./cmd/server/
 
 ### 下载 Release
 
-前往 [Releases](https://gitee.com/cpufreestyle/amd-gpu-scheduler/releases) 下载编译好的可执行文件。
+前往 [Releases](https://gitee.com/cpufreestyle/hybrid-gpu-scheduler/releases) 下载编译好的可执行文件。
 
 ## 📡 API
 
@@ -202,3 +202,4 @@ MIT License
 <p align="center">
   Made with ❤️ by <a href="https://gitee.com/cpufreestyle">cpufreestyle</a>
 </p>
+
