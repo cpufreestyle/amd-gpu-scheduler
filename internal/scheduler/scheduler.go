@@ -19,16 +19,22 @@ type Scheduler struct {
 	gpuCount     int
 	gpus         map[string]*types.GPUSnapshot // gpuID -> GPU
 	defaultPolicy types.SchedulingPolicy
+	
+	// Preemption support
+	preemptConfig *PreemptConfig
+	preemptHistory []*PreemptRecord
 }
 
 // NewScheduler creates a new hybrid scheduler
 func NewScheduler() *Scheduler {
 	s := &Scheduler{
-		pendingTasks: make([]*types.Task, 0),
-		runningTasks: make(map[string]*types.Task),
-		gpuCount:     2,
-		gpus:         make(map[string]*types.GPUSnapshot),
-		defaultPolicy: types.PolicyBinpack,
+		pendingTasks:  make([]*types.Task, 0),
+		runningTasks:  make(map[string]*types.Task),
+		gpuCount:      2,
+		gpus:          make(map[string]*types.GPUSnapshot),
+		defaultPolicy:  types.PolicyBinpack,
+		preemptConfig:  DefaultPreemptConfig(),
+		preemptHistory: make([]*PreemptRecord, 0),
 	}
 	
 	// Initialize with two GPUs (will be updated by GPU manager)
@@ -137,6 +143,15 @@ func (s *Scheduler) SubmitTask(task *types.Task) (string, error) {
 
 	// Try to schedule immediately
 	result := s.scheduleLocked(task, criteria)
+	
+	// If scheduling failed, try preemption
+	if !result.Success && s.preemptConfig.Enabled {
+		log.Printf("⚡ Task %s (priority %d) failed to schedule, trying preemption...", task.ID, task.Priority)
+		if s.tryPreempt(task, criteria) {
+			// Preemption succeeded, retry scheduling
+			result = s.scheduleLocked(task, criteria)
+		}
+	}
 	
 	if result.Success {
 		task.Status = "running"
