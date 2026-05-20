@@ -262,6 +262,9 @@ func main() {
 			c.JSON(http.StatusOK, gin.H{"success": true, "status": "running"})
 		})
 	}
+	
+	// Preemption API
+	SetupPreemptAPI(r, sched)
 
 	addr := ":8080"
 	log.Printf("")
