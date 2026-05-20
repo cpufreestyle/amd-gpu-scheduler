@@ -1,6 +1,9 @@
 package types
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Task represents a GPU compute task
 type Task struct {
@@ -41,6 +44,63 @@ type TaskRequest struct {
 	Env      map[string]string `json:"env"`
 	WorkDir  string            `json:"work_dir"`
 	Timeout  int               `json:"timeout"`
+}
+
+// parseTaskRequest handles both snake_case and original field names for compatibility
+type taskRequestCompat struct {
+	Name            string            `json:"name"`
+	Type            string            `json:"type"`
+	Priority        int               `json:"priority"`
+	GPUReq          int               `json:"gpu_req"`
+	VRAMMB          int               `json:"vram_mb"`
+	VRAMRequiredMB  int               `json:"vram_required_mb"` // alias
+	Policy          string            `json:"policy"`
+	Command         string            `json:"command"`
+	Args            []string          `json:"args"`
+	Env             map[string]string `json:"env"`
+	WorkDir         string            `json:"work_dir"`
+	Timeout         int               `json:"timeout"`
+	TimeoutSeconds  int               `json:"timeout_seconds"` // alias
+}
+
+func ParseTaskRequest(data []byte) (TaskRequest, error) {
+	// Strip UTF-8 BOM if present
+	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+		data = data[3:]
+	}
+
+	var compat taskRequestCompat
+	if err := json.Unmarshal(data, &compat); err != nil {
+		return TaskRequest{}, err
+	}
+
+	req := TaskRequest{
+		Name:     compat.Name,
+		Type:     compat.Type,
+		Priority: compat.Priority,
+		GPUReq:   compat.GPUReq,
+		Policy:   compat.Policy,
+		Command:  compat.Command,
+		Args:     compat.Args,
+		Env:      compat.Env,
+		WorkDir:  compat.WorkDir,
+	}
+
+	// VRAM: prefer vram_required_mb over vram_mb
+	if compat.VRAMRequiredMB > 0 {
+		req.VRAMMB = compat.VRAMRequiredMB
+	} else {
+		req.VRAMMB = compat.VRAMMB
+	}
+
+	// Timeout: prefer timeout_seconds over timeout
+	if compat.TimeoutSeconds > 0 {
+		req.Timeout = compat.TimeoutSeconds
+	} else {
+		req.Timeout = compat.Timeout
+	}
+
+	return req, nil
 }
 
 // TaskResponse from API

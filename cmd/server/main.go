@@ -1,12 +1,15 @@
-﻿package main
+package main
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"log"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/hybrid-gpu-scheduler/internal/executor"
 	"github.com/hybrid-gpu-scheduler/internal/gpumonitor"
 	"github.com/hybrid-gpu-scheduler/internal/metrics"
 	"github.com/hybrid-gpu-scheduler/internal/scheduler"
@@ -20,6 +23,7 @@ func main() {
 	log.Println("Hybrid NVIDIA + AMD GPU Scheduler v2.0")
 
 	sched := scheduler.NewScheduler()
+	execInst := executor.GetExecutor()
 
 	// GPU 监控（通过 nvidia-smi / rocm-smi 读取真实 GPU 数据）
 	gpuMon := gpumonitor.NewGPUMonitor(func(gpuID string, update gpumonitor.GPUMonitorUpdate) {
@@ -80,8 +84,13 @@ func main() {
 	tasks := r.Group("/api/tasks")
 	{
 		tasks.POST("", func(c *gin.Context) {
-			var req types.TaskRequest
-			if err := c.ShouldBindJSON(&req); err != nil {
+			body, err := io.ReadAll(c.Request.Body)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
+				return
+			}
+			req, err := types.ParseTaskRequest(body)
+			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
@@ -137,6 +146,18 @@ func main() {
 			c.JSON(http.StatusOK, gin.H{"success": true, "tasks": t})
 		})
 
+		// Get single task by ID
+		tasks.GET("/:id", func(c *gin.Context) {
+			taskID := c.Param("id")
+			for _, t := range sched.ListTasks() {
+				if t.ID == taskID {
+					c.JSON(http.StatusOK, gin.H{"success": true, "task": t})
+					return
+				}
+			}
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "Task not found"})
+		})
+
 		tasks.DELETE("/:id", func(c *gin.Context) {
 			taskID := c.Param("id")
 			if sched.CancelTask(taskID) {
@@ -157,12 +178,44 @@ func main() {
 
 		tasks.POST("/:id/stop", func(c *gin.Context) {
 			taskID := c.Param("id")
+			// Check task exists
+			found := false
+			for _, t := range sched.ListTasks() {
+				if t.ID == taskID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "Task not found"})
+				return
+			}
+			// Try to stop via executor
+			if err := execInst.StopTask(taskID); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+				return
+			}
 			c.JSON(http.StatusOK, gin.H{"success": true, "message": "Task stop requested", "task_id": taskID})
 		})
 
 		tasks.GET("/:id/log", func(c *gin.Context) {
 			taskID := c.Param("id")
-			c.JSON(http.StatusOK, gin.H{"success": true, "task_id": taskID, "log": "log content..."})
+			var logContent string
+			for _, t := range sched.ListTasks() {
+				if t.ID == taskID {
+					if t.LogFile != "" {
+						data, err := os.ReadFile(t.LogFile)
+						if err == nil {
+							logContent = string(data)
+						}
+					}
+					break
+				}
+			}
+			if logContent == "" {
+				logContent = "No log available"
+			}
+			c.JSON(http.StatusOK, gin.H{"success": true, "task_id": taskID, "log": logContent})
 		})
 	}
 
