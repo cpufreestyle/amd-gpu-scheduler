@@ -57,6 +57,10 @@ func main() {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.File("dashboard.html")
 	})
+	r.GET("/dashboard-520", func(c *gin.Context) {
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.File("dashboard-520.html")
+	})
 	r.GET("/", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.File("dashboard.html")
