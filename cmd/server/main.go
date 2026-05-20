@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/amd-gpu-scheduler/internal/gpumonitor"
 	"github.com/amd-gpu-scheduler/internal/metrics"
 	"github.com/amd-gpu-scheduler/internal/scheduler"
 	"github.com/amd-gpu-scheduler/pkg/types"
@@ -19,6 +20,20 @@ func main() {
 	log.Println("Hybrid NVIDIA + AMD GPU Scheduler v2.0")
 
 	sched := scheduler.NewScheduler()
+
+	// GPU 监控（通过 nvidia-smi / rocm-smi 读取真实 GPU 数据）
+	gpuMon := gpumonitor.NewGPUMonitor(func(gpuID string, update gpumonitor.GPUMonitorUpdate) {
+		usage := types.GPUUsage{
+			UsedVRAMMB:   update.UsedVRAMMB,
+			Utilization:  update.UtilizationPct,
+			TemperatureC: update.TemperatureC,
+			PowerDrawW:  update.PowerDrawW,
+		}
+		sched.UpdateGPUUsage(gpuID, usage)
+	})
+	go gpuMon.Start(5 * time.Second)
+	defer gpuMon.Stop()
+
 	gpus := sched.ListGPUs()
 	log.Printf("Scheduler initialized with %d GPUs", len(gpus))
 	for _, gpu := range gpus {

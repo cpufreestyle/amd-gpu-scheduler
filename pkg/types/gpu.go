@@ -40,6 +40,8 @@ type GPUUsage struct {
 	MemoryUtil    float64   // Memory utilization 0-100%
 	ComputeUtil   float64   // Compute utilization 0-100%
 	RunningTasks  int       // Number of running tasks
+	TemperatureC int       // Temperature in Celsius
+	PowerDrawW    float64   // Power draw in Watts
 	LastUpdated   time.Time // Last update time
 }
 
