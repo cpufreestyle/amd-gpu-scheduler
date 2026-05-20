@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/hybrid-gpu-scheduler/pkg/types"
@@ -117,12 +116,8 @@ func (e *Executor) SubmitTask(task *types.Task, gpuID string) error {
 		taskCtx, taskCancel = context.WithCancel(context.Background())
 	}
 
-	// On Windows, create process group so we can kill the entire process tree
-	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
-		}
-	}
+	// Platform-specific process group setup
+	setupSysProcAttr(cmd)
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
@@ -156,44 +151,6 @@ func (e *Executor) SubmitTask(task *types.Task, gpuID string) error {
 	go e.monitorTask(task.ID, cmd, taskCtx, taskCancel)
 
 	return nil
-}
-
-// buildTrainingCommand builds command for training tasks
-func (e *Executor) buildTrainingCommand(task *types.Task, gpuID string) *exec.Cmd {
-	if task.Command != "" {
-		return e.buildCommandByOS(task.Command)
-	}
-	// Default: simulate training with GPU stress
-	return exec.Command("nvidia-smi", "nvlink", "-s")
-}
-
-// buildInferenceCommand builds command for inference tasks
-func (e *Executor) buildInferenceCommand(task *types.Task, gpuID string) *exec.Cmd {
-	if task.Command != "" {
-		return e.buildCommandByOS(task.Command)
-	}
-	// Default: query GPU status
-	if strings.HasPrefix(gpuID, "0") {
-		return exec.Command("nvidia-smi", "--query-gpu=utilization.gpu,memory.used", "--format=csv")
-	}
-	return exec.Command("rocm-smi", "--showuse")
-}
-
-// buildComputeCommand builds command for general compute tasks
-func (e *Executor) buildComputeCommand(task *types.Task, gpuID string) *exec.Cmd {
-	if task.Command != "" {
-		return e.buildCommandByOS(task.Command)
-	}
-	// Default: GPU compute test
-	return exec.Command("nvidia-smi", "nvlink", "-s")
-}
-
-// buildDefaultCommand builds default command
-func (e *Executor) buildDefaultCommand(task *types.Task, gpuID string) *exec.Cmd {
-	if task.Command != "" {
-		return e.buildCommandByOS(task.Command)
-	}
-	return exec.Command("echo", fmt.Sprintf("Task %s running on GPU %s", task.ID, gpuID))
 }
 
 // buildCommandByOS builds command with OS-appropriate shell
@@ -231,19 +188,7 @@ func (e *Executor) buildEnv(task *types.Task, gpuID string) []string {
 	return newEnv
 }
 
-// killProcessTree kills a process and all its children
-func (e *Executor) killProcessTree(pid int) error {
-	// Use taskkill on all platforms for simplicity
-	killCmd := exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid))
-	if err := killCmd.Run(); err != nil {
-		// Fallback: try direct process kill
-		proc, pErr := os.FindProcess(pid)
-		if pErr == nil {
-			proc.Kill()
-		}
-	}
-	return nil
-}
+
 
 // monitorTask monitors a running task and updates status on completion
 func (e *Executor) monitorTask(taskID string, cmd *exec.Cmd, ctx context.Context, cancel context.CancelFunc) {
