@@ -1,10 +1,10 @@
-package scheduler
+﻿package scheduler
 
 import (
 	"fmt"
 	"sort"
 
-	"github.com/amd-gpu-scheduler/pkg/types"
+	"github.com/hybrid-gpu-scheduler/pkg/types"
 )
 
 // HybridScheduler implements a hybrid GPU scheduling algorithm
@@ -239,3 +239,4 @@ func (s *HybridScheduler) PrintScoreBreakdown(gpu *types.GPUSnapshot, criteria *
 		score,
 	)
 }
+

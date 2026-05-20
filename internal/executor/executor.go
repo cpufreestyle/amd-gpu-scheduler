@@ -1,4 +1,4 @@
-package executor
+﻿package executor
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/amd-gpu-scheduler/pkg/types"
+	"github.com/hybrid-gpu-scheduler/pkg/types"
 )
 
 // Executor manages GPU task execution
@@ -379,3 +379,4 @@ func (e *Executor) Shutdown() {
 	}
 	e.cancel()
 }
+

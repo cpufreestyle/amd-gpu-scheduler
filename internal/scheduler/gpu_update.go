@@ -1,9 +1,9 @@
-package scheduler
+﻿package scheduler
 
 import (
 	"time"
 
-	"github.com/amd-gpu-scheduler/pkg/types"
+	"github.com/hybrid-gpu-scheduler/pkg/types"
 )
 
 // UpdateGPUUsage updates the usage stats for a GPU by ID.
@@ -19,3 +19,4 @@ func (s *Scheduler) UpdateGPUUsage(id string, usage types.GPUUsage) bool {
 	}
 	return false
 }
+

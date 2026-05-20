@@ -1,4 +1,4 @@
-package scheduler
+﻿package scheduler
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amd-gpu-scheduler/internal/executor"
-	"github.com/amd-gpu-scheduler/pkg/types"
+	"github.com/hybrid-gpu-scheduler/internal/executor"
+	"github.com/hybrid-gpu-scheduler/pkg/types"
 )
 
 // Scheduler manages GPU task scheduling with hybrid NVIDIA + AMD support
@@ -446,3 +446,4 @@ func (s *Scheduler) GetDefaultPolicy() types.SchedulingPolicy {
 	defer s.mu.RUnlock()
 	return s.defaultPolicy
 }
+

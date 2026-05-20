@@ -1,9 +1,9 @@
-package main
+﻿package main
 
 import (
 	"net/http"
 
-	"github.com/amd-gpu-scheduler/internal/scheduler"
+	"github.com/hybrid-gpu-scheduler/internal/scheduler"
 	"github.com/gin-gonic/gin"
 )
 
@@ -83,3 +83,4 @@ func SetupPreemptAPI(r *gin.Engine, sched *scheduler.Scheduler) {
 		})
 	}
 }
+

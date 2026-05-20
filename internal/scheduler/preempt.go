@@ -1,4 +1,4 @@
-package scheduler
+﻿package scheduler
 
 import (
 	"fmt"
@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/amd-gpu-scheduler/pkg/types"
-	"github.com/amd-gpu-scheduler/internal/executor"
+	"github.com/hybrid-gpu-scheduler/pkg/types"
+	"github.com/hybrid-gpu-scheduler/internal/executor"
 )
 
 // PreemptPolicy defines the preemption strategy
@@ -168,3 +168,4 @@ func (s *Scheduler) UpdatePreemptConfig(config *PreemptConfig) {
 	log.Printf("⚡ Preemption config updated: Enabled=%v, MinPriority=%d, MaxBePreempted=%d, Policy=%s\n",
 		config.Enabled, config.MinPriorityToPreempt, config.MaxPriorityToBePreempted, config.Policy)
 }
+

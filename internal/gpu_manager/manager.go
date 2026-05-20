@@ -1,8 +1,8 @@
-package gpu_manager
+﻿package gpu_manager
 
 import (
-    "github.com/amd-gpu-scheduler/pkg/gpu"
-    "github.com/amd-gpu-scheduler/pkg/roc"
+    "github.com/hybrid-gpu-scheduler/pkg/gpu"
+    "github.com/hybrid-gpu-scheduler/pkg/roc"
 )
 
 type Manager struct {
@@ -19,3 +19,4 @@ func NewManager() (*Manager, error) {
         gpuMgr: gpu.NewGPUManager(),
     }, nil
 }
+

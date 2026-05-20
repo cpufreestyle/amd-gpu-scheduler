@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"fmt"
@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/amd-gpu-scheduler/internal/gpumonitor"
-	"github.com/amd-gpu-scheduler/internal/metrics"
-	"github.com/amd-gpu-scheduler/internal/scheduler"
-	"github.com/amd-gpu-scheduler/pkg/types"
+	"github.com/hybrid-gpu-scheduler/internal/gpumonitor"
+	"github.com/hybrid-gpu-scheduler/internal/metrics"
+	"github.com/hybrid-gpu-scheduler/internal/scheduler"
+	"github.com/hybrid-gpu-scheduler/pkg/types"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -312,3 +312,4 @@ func getPolicyDescription(policy types.SchedulingPolicy) string {
 		return "Unknown policy"
 	}
 }
+
