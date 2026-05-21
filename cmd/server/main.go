@@ -25,6 +25,11 @@ func main() {
 	sched := scheduler.NewScheduler()
 	execInst := executor.GetExecutor()
 
+	// When executor finishes a task, release GPU resources in scheduler
+	execInst.SetOnTaskDone(func(taskID string) {
+		sched.ReleaseTask(taskID)
+	})
+
 	// GPU 监控（通过 nvidia-smi / rocm-smi 读取真实 GPU 数据）
 	gpuMon := gpumonitor.NewGPUMonitor(func(gpuID string, update gpumonitor.GPUMonitorUpdate) {
 		usage := types.GPUUsage{
@@ -313,10 +318,15 @@ func main() {
 	execAPI := r.Group("/api/executor")
 	{
 		execAPI.GET("/running", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"success": true, "tasks": []string{}})
+			running := execInst.ListRunningTasks()
+			ids := make([]string, 0, len(running))
+			for _, rt := range running {
+				ids = append(ids, rt.Task.ID+" (PID:"+strconv.Itoa(rt.PID)+")")
+			}
+			c.JSON(http.StatusOK, gin.H{"success": true, "tasks": ids, "count": len(ids)})
 		})
 		execAPI.GET("/status", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"success": true, "status": "running"})
+			c.JSON(http.StatusOK, gin.H{"success": true, "status": "running", "active_tasks": len(execInst.ListRunningTasks())})
 		})
 	}
 	

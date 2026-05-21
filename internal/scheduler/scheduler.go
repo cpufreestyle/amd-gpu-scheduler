@@ -5,6 +5,7 @@ import (
 	"log"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hybrid-gpu-scheduler/internal/executor"
@@ -16,9 +17,11 @@ type Scheduler struct {
 	mu           sync.RWMutex
 	pendingTasks []*types.Task
 	runningTasks map[string]*types.Task // taskID -> Task
+	completedTasks []*types.Task         // finished tasks (completed/failed/timeout/killed)
 	gpuCount     int
 	gpus         map[string]*types.GPUSnapshot // gpuID -> GPU
 	defaultPolicy types.SchedulingPolicy
+	taskCounter  atomic.Int64
 	
 	// Preemption support
 	preemptConfig *PreemptConfig
@@ -30,6 +33,7 @@ func NewScheduler() *Scheduler {
 	s := &Scheduler{
 		pendingTasks:  make([]*types.Task, 0),
 		runningTasks:  make(map[string]*types.Task),
+		completedTasks: make([]*types.Task, 0),
 		gpuCount:      2,
 		gpus:          make(map[string]*types.GPUSnapshot),
 		defaultPolicy:  types.PolicyBinpack,
@@ -123,7 +127,7 @@ func (s *Scheduler) SubmitTask(task *types.Task) (string, error) {
 
 	// Generate task ID if not set
 	if task.ID == "" {
-		task.ID = fmt.Sprintf("task-%d", len(s.pendingTasks)+len(s.runningTasks)+1)
+		task.ID = fmt.Sprintf("task-%d", s.taskCounter.Add(1))
 	}
 	task.Status = "pending"
 
@@ -373,12 +377,49 @@ func (s *Scheduler) ListTasks() []*types.Task {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	tasks := make([]*types.Task, 0, len(s.pendingTasks)+len(s.runningTasks))
+	tasks := make([]*types.Task, 0, len(s.pendingTasks)+len(s.runningTasks)+len(s.completedTasks))
 	tasks = append(tasks, s.pendingTasks...)
 	for _, task := range s.runningTasks {
 		tasks = append(tasks, task)
 	}
+	tasks = append(tasks, s.completedTasks...)
 	return tasks
+}
+
+// ReleaseTask removes a task from running and releases GPU resources (called by executor on completion/timeout/kill)
+func (s *Scheduler) ReleaseTask(taskID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	task, ok := s.runningTasks[taskID]
+	if !ok {
+		return
+	}
+
+	vramMB := task.VRAMMB
+	if vramMB == 0 {
+		vramMB = 4096
+	}
+	gpuID := fmt.Sprintf("%d", task.GPUReq)
+	if gpu, exists := s.gpus[gpuID]; exists {
+		gpu.Usage.UsedVRAMMB -= vramMB
+		if gpu.Usage.UsedVRAMMB < 0 {
+			gpu.Usage.UsedVRAMMB = 0
+		}
+		gpu.Usage.RunningTasks--
+		if gpu.Usage.RunningTasks < 0 {
+			gpu.Usage.RunningTasks = 0
+		}
+		gpu.Usage.LastUpdated = time.Now()
+	}
+
+	delete(s.runningTasks, taskID)
+	s.completedTasks = append(s.completedTasks, task)
+	// Keep at most 100 completed tasks
+	if len(s.completedTasks) > 100 {
+		s.completedTasks = s.completedTasks[len(s.completedTasks)-100:]
+	}
+	s.trySchedulePendingLocked()
 }
 
 // CancelTask cancels a pending task
@@ -395,18 +436,42 @@ func (s *Scheduler) CancelTask(taskID string) bool {
 	return false
 }
 
-// CompleteTask marks a running task as complete
+// CompleteTask marks a running task as complete and releases GPU resources
 func (s *Scheduler) CompleteTask(taskID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.runningTasks[taskID]; ok {
-		delete(s.runningTasks, taskID)
-		// Try to schedule pending tasks
-		s.trySchedulePendingLocked()
-		return true
+	task, ok := s.runningTasks[taskID]
+	if !ok {
+		return false
 	}
-	return false
+
+	// Release GPU resources
+	vramMB := task.VRAMMB
+	if vramMB == 0 {
+		vramMB = 4096 // default allocation
+	}
+	gpuID := fmt.Sprintf("%d", task.GPUReq)
+	if gpu, exists := s.gpus[gpuID]; exists {
+		gpu.Usage.UsedVRAMMB -= vramMB
+		if gpu.Usage.UsedVRAMMB < 0 {
+			gpu.Usage.UsedVRAMMB = 0
+		}
+		gpu.Usage.RunningTasks--
+		if gpu.Usage.RunningTasks < 0 {
+			gpu.Usage.RunningTasks = 0
+		}
+		gpu.Usage.LastUpdated = time.Now()
+	}
+
+	delete(s.runningTasks, taskID)
+	s.completedTasks = append(s.completedTasks, task)
+	if len(s.completedTasks) > 100 {
+		s.completedTasks = s.completedTasks[len(s.completedTasks)-100:]
+	}
+	// Try to schedule pending tasks
+	s.trySchedulePendingLocked()
+	return true
 }
 
 // trySchedulePendingLocked tries to schedule pending tasks

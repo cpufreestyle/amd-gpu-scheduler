@@ -22,6 +22,7 @@ type Executor struct {
 	taskQueue chan *types.Task
 	ctx       context.Context
 	cancel    context.CancelFunc
+	onTaskDone func(taskID string) // callback when task completes/fails/times out/killed
 }
 
 // RunningTask represents a task currently executing
@@ -217,41 +218,53 @@ func (e *Executor) monitorTask(taskID string, cmd *exec.Cmd, ctx context.Context
 		}
 	}
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
+		e.mu.Lock()
+		defer e.mu.Unlock()
 
-	if running, exists := e.running[taskID]; exists {
-		now := time.Now()
-		running.Task.EndTime = &now
+		if running, exists := e.running[taskID]; exists {
+			now := time.Now()
+			running.Task.EndTime = &now
 
-		if ctx.Err() == context.DeadlineExceeded {
-			log.Printf("⏰ Task %s timed out", taskID)
-			running.Task.Status = "timeout"
-			running.Task.Error = "task exceeded timeout limit"
-			if cmd.ProcessState != nil {
-				running.Task.ExitCode = cmd.ProcessState.ExitCode()
+			if ctx.Err() == context.DeadlineExceeded {
+				log.Printf("⏰ Task %s timed out", taskID)
+				running.Task.Status = "timeout"
+				running.Task.Error = "task exceeded timeout limit"
+				if cmd.ProcessState != nil {
+					running.Task.ExitCode = cmd.ProcessState.ExitCode()
+				} else {
+					running.Task.ExitCode = -1
+				}
+			} else if err != nil {
+				log.Printf("❌ Task %s failed: %v", taskID, err)
+				running.Task.Status = "failed"
+				running.Task.Error = err.Error()
+				if cmd.ProcessState != nil {
+					running.Task.ExitCode = cmd.ProcessState.ExitCode()
+				} else {
+					running.Task.ExitCode = 1
+				}
 			} else {
-				running.Task.ExitCode = -1
-			}
-		} else if err != nil {
-			log.Printf("❌ Task %s failed: %v", taskID, err)
-			running.Task.Status = "failed"
-			running.Task.Error = err.Error()
-			if cmd.ProcessState != nil {
-				running.Task.ExitCode = cmd.ProcessState.ExitCode()
-			} else {
-				running.Task.ExitCode = 1
-			}
-		} else {
-			log.Printf("✅ Task %s completed", taskID)
-			running.Task.Status = "completed"
-			if cmd.ProcessState != nil {
-				running.Task.ExitCode = cmd.ProcessState.ExitCode()
-			} else {
-				running.Task.ExitCode = 0
+				log.Printf("✅ Task %s completed", taskID)
+				running.Task.Status = "completed"
+				if cmd.ProcessState != nil {
+					running.Task.ExitCode = cmd.ProcessState.ExitCode()
+				} else {
+					running.Task.ExitCode = 0
+				}
 			}
 		}
-	}
+
+		// Notify scheduler to release GPU resources
+		if e.onTaskDone != nil {
+			e.onTaskDone(taskID)
+		}
+}
+
+// SetOnTaskDone sets a callback invoked when a task finishes (complete/fail/timeout/kill)
+func (e *Executor) SetOnTaskDone(fn func(taskID string)) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.onTaskDone = fn
 }
 
 // GetRunningTask returns a running task by ID
