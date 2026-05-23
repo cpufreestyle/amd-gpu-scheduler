@@ -64,9 +64,14 @@ func (e *Executor) SubmitTask(task *types.Task, gpuID string) error {
 		return fmt.Errorf("task %s is already running", task.ID)
 	}
 
-	// Create log directory
-	logDir := "logs"
-	os.MkdirAll(logDir, 0755)
+	// Create log directory (absolute path next to executable)
+	logDir := filepath.Join(filepath.Dir(os.Args[0]), "logs")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		log.Printf("⚠️  Cannot create log dir %s: %v", logDir, err)
+		// fallback to current directory
+		logDir = "logs"
+		os.MkdirAll(logDir, 0755)
+	}
 
 	// Create log file
 	logFile := filepath.Join(logDir, fmt.Sprintf("task-%s-%d.log", task.ID, time.Now().Unix()))
