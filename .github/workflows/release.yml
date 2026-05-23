@@ -35,7 +35,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -o "${{ matrix.output }}" -ldflags "-s -w" .
+          go build -o "${{ matrix.output }}" -ldflags "-s -w" ./cmd/server
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
