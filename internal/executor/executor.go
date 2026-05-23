@@ -23,6 +23,7 @@ type Executor struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	onTaskDone func(taskID string) // callback when task completes/fails/times out/killed
+	sseLogger  SSELogger            // optional SSE broadcaster
 }
 
 // RunningTask represents a task currently executing
@@ -38,6 +39,13 @@ type RunningTask struct {
 
 var globalExecutor *Executor
 var once sync.Once
+
+// SetSSELogger sets the SSE broadcaster for streaming task logs
+func (e *Executor) SetSSELogger(logger SSELogger) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.sseLogger = logger
+}
 
 // GetExecutor returns the singleton executor instance
 func GetExecutor() *Executor {
@@ -105,13 +113,23 @@ func (e *Executor) SubmitTask(task *types.Task, gpuID string) error {
 	// Set environment variables for GPU isolation
 	cmd.Env = e.buildEnv(task, gpuID)
 
-	// Redirect output to log file
+	// Redirect output to log file with optional SSE streaming
 	logFH, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %v", err)
 	}
-	cmd.Stdout = logFH
-	cmd.Stderr = logFH
+	
+	// Wrap with SSE broadcaster if available
+	if e.sseLogger != nil {
+		tw := newTaskLogWriter(task.ID, logFH, func(taskID, line string) {
+			e.sseLogger.BroadcastTaskLog(taskID, line)
+		})
+		cmd.Stdout = tw
+		cmd.Stderr = tw
+	} else {
+		cmd.Stdout = logFH
+		cmd.Stderr = logFH
+	}
 
 	// Set up timeout context
 	var taskCtx context.Context
