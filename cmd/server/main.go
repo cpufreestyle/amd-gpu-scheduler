@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/hybrid-gpu-scheduler/internal/gpumonitor"
 	"github.com/hybrid-gpu-scheduler/internal/metrics"
 	"github.com/hybrid-gpu-scheduler/internal/scheduler"
+	"github.com/hybrid-gpu-scheduler/pkg/sse"
 	"github.com/hybrid-gpu-scheduler/pkg/types"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -25,6 +27,10 @@ func main() {
 
 	sched := scheduler.NewScheduler()
 	execInst := executor.GetExecutor()
+
+	// Integrate SSE for real-time log streaming
+	sseMgr := sse.GetSSEManager()
+	execInst.SetSSELogger(sseMgr)
 
 	// When executor finishes a task, release GPU resources in scheduler
 	execInst.SetOnTaskDone(func(taskID string) {
@@ -180,6 +186,37 @@ func main() {
 				c.JSON(http.StatusOK, gin.H{"success": true, "message": "Task cancelled"})
 			} else {
 				c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "Task not found"})
+			}
+		})
+
+		// SSE stream: GET /api/tasks/stream - real-time task log streaming
+		tasks.GET("/stream", func(c *gin.Context) {
+			c.Header("Content-Type", "text/event-stream")
+			c.Header("Cache-Control", "no-cache")
+			c.Header("Connection", "keep-alive")
+			c.Header("Access-Control-Allow-Origin", "*")
+			c.Header("X-Accel-Buffering", "no")
+
+			ch := sseMgr.Register()
+			defer sseMgr.Unregister(ch)
+
+			// Heartbeat every 20s to keep connection alive
+			ticker := time.NewTicker(20 * time.Second)
+			defer ticker.Stop()
+
+			clientGone := c.Request.Context().Done()
+			for {
+				select {
+				case ev := <-ch:
+					data, _ := json.Marshal(ev)
+					fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", ev.Type, data)
+					c.Writer.Flush()
+				case <-ticker.C:
+					fmt.Fprintf(c.Writer, "event: heartbeat\ndata: {\"time\":\"%s\"}\n\n", time.Now().Format(time.RFC3339))
+					c.Writer.Flush()
+				case <-clientGone:
+					return
+				}
 			}
 		})
 
