@@ -6,6 +6,7 @@ import (
 	"os"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -62,17 +63,27 @@ func main() {
 	r.Use(gin.Recovery())
 
 	// Dashboard
+	exePath, _ := os.Executable()
+	exeDir := filepath.Dir(exePath)
+	log.Printf("exeDir=%s", exeDir)
+	dash := filepath.Join(exeDir, "dashboard.html")
+	log.Printf("dash=%s", dash)
+	if _, err := os.Stat(dash); os.IsNotExist(err) {
+		log.Printf("WARNING: dashboard.html not found at %s", dash)
+	}
+	dash520 := filepath.Join(exeDir, "dashboard-520.html")
+
 	r.GET("/dashboard", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.File("dashboard.html")
+		c.File(dash)
 	})
 	r.GET("/dashboard-520", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.File("dashboard-520.html")
+		c.File(dash520)
 	})
 	r.GET("/", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.File("dashboard.html")
+		c.File(dash)
 	})
 
 	// Health
