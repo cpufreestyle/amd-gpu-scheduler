@@ -1,4 +1,4 @@
-{{- if and .Values.master.enabled (eq .Values.mode "master") }}
+﻿{{- if and .Values.master.enabled (eq .Values.mode "master") }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "hybrid-gaxe-scheduler.selectorLabels" . | nindent 8 }}
+        {{- include "hybrid-gpu-scheduler.selectorLabels" . | nindent 8 }}
         component: master
       annotations:
         prometheus.io/scrape: "true"
