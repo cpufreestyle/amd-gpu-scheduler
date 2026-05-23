@@ -350,7 +350,76 @@ async function setPolicy(policy) {
   } catch(e) { console.error(e); }
 }
 
+
+// ── SSE Real-time Log Streaming ──────────────────────────────────────
+let taskLogBuffer = {};   // taskID -> accumulated lines
+
+function appendTaskLog(taskID, line) {
+  if (!taskLogBuffer[taskID]) taskLogBuffer[taskID] = [];
+  taskLogBuffer[taskID].push(line);
+  // Keep last 200 lines per task
+  if (taskLogBuffer[taskID].length > 200) taskLogBuffer[taskID].shift();
+  
+  // If log modal is open for this task, update display
+  const logDiv = document.getElementById('live-log-' + taskID);
+  if (logDiv) {
+    logDiv.textContent = taskLogBuffer[taskID].join('\n');
+    logDiv.scrollTop = logDiv.scrollHeight;
+  }
+}
+
+function updateTaskStatus(taskID, status) {
+  // Update task card status badge
+  const badge = document.querySelector('[data-task-id="' + taskID + '"] .status-badge');
+  if (badge) {
+    badge.textContent = status;
+    badge.className = 'status-badge status-' + status;
+  }
+  // Refresh data on next interval to sync with API
+}
+
+function initSSE() {
+  if (typeof EventSource === 'undefined') {
+    console.log('SSE not supported');
+    return;
+  }
+  
+  const source = new EventSource('/api/tasks/stream');
+  
+  source.addEventListener('connected', function(e) {
+    console.log('SSE connected');
+    const badge = document.getElementById('sse-status');
+    if (badge) { badge.textContent = '● LIVE'; badge.style.color = '#4caf50'; }
+  });
+  
+  source.addEventListener('task_log', function(e) {
+    try {
+      const d = JSON.parse(e.data);
+      appendTaskLog(d.task_id, d.line);
+    } catch(err) { console.error('task_log parse error:', err); }
+  });
+  
+  source.addEventListener('task_status', function(e) {
+    try {
+      const d = JSON.parse(e.data);
+      updateTaskStatus(d.task_id, d.status);
+    } catch(err) { console.error('task_status parse error:', err); }
+  });
+  
+  source.addEventListener('heartbeat', function(e) {
+    // Silent heartbeat
+  });
+  
+  source.onerror = function(e) {
+    console.warn('SSE error, reconnecting...');
+    source.close();
+    setTimeout(initSSE, 3000);
+  };
+}
+
+
 // Init
+initSSE();
 refreshAll();
 refreshTimer = setInterval(refreshAll, 5000);
 </script>
