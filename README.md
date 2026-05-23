@@ -1,4 +1,6 @@
-﻿# 🎮 AMD GPU Scheduler
+﻿# 🎮 Hybrid GPU Scheduler
+
+[![CI](https://github.com/cpufreestyle/hybrid-gpu-scheduler/actions/workflows/release.yml/badge.svg)](https://github.com/cpufreestyle/hybrid-gpu-scheduler/actions) [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://golang.org/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 混合 GPU 智能调度器 — 支持 NVIDIA + AMD 异构 GPU 环境的任务调度与管理。
 
@@ -60,7 +62,14 @@ go build -o scheduler ./cmd/server/
 
 ### 下载 Release
 
-前往 [Releases](https://gitee.com/cpufreestyle/hybrid-gpu-scheduler/releases) 下载编译好的可执行文件。
+前往 [GitHub Releases](https://github.com/cpufreestyle/hybrid-gpu-scheduler/releases/latest) 下载编译好的可执行文件：
+
+| 平台 | 文件 |
+|------|------|
+| Windows | `hybrid-gpu-scheduler-windows-amd64.exe` |
+| Linux | `hybrid-gpu-scheduler-linux-amd64` |
+
+> 💡 发版只需 `git tag v1.x.x && git push origin v1.x.x`，GitHub Actions 自动构建并发布！
 
 ## 📡 API
 
