@@ -74,7 +74,7 @@
 <header>
   <h1>Hybrid GPU Scheduler</h1>
   <div class="header-right">
-    <span><span class="status-dot"></span>v2.0 Hybrid</span>
+    <span><span class="status-dot" id="conn-dot"></span><span id="conn-label">v2.0 Hybrid</span></span>
     <button class="refresh-btn" onclick="refreshAll()">Refresh Now</button>
   </div>
 </header>
@@ -418,10 +418,219 @@ function initSSE() {
 }
 
 
-// Init
+// ── WebSocket: real-time GPU + task updates ──────────────────────────
+let ws = null;
+let wsReconnectTimer = null;
+
+function connectWS() {
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = protocol + '//' + location.host + '/ws?type=dashboard&id=' + Math.random().toString(36).slice(2);
+  ws = new WebSocket(url);
+
+  ws.addEventListener('open', () => {
+    console.log('[ws] connected');
+    setConnStatus(true);
+    if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+  });
+
+  ws.addEventListener('message', (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      handleWSMessage(msg);
+    } catch(err) {
+      // might be a plain string
+    }
+  });
+
+  ws.addEventListener('close', () => {
+    console.warn('[ws] disconnected, reconnecting...');
+    setConnStatus(false);
+    wsReconnectTimer = setTimeout(connectWS, 3000);
+  });
+
+  ws.addEventListener('error', () => {
+    ws.close();
+  });
+}
+
+function setConnStatus(connected) {
+  const dot = document.getElementById('conn-dot');
+  const label = document.getElementById('conn-label');
+  if (connected) {
+    if (dot) dot.style.background = '#00ff88';
+    if (label) label.textContent = 'v2.0 Hybrid ● WS Live';
+  } else {
+    if (dot) dot.style.background = '#ff4444';
+    if (label) label.textContent = 'v2.0 Hybrid ○ Reconnecting...';
+  }
+}
+
+// Incoming WebSocket message router
+function handleWSMessage(msg) {
+  if (!msg || !msg.type) return;
+
+  switch(msg.type) {
+    case 'gpu_update':
+      handleGPUUpdate(msg.payload);
+      break;
+    case 'task_update':
+      handleTaskUpdate(msg.payload);
+      break;
+    case 'task_log':
+      handleTaskLogWS(msg.payload);
+      break;
+    case 'heartbeat':
+    case 'pong':
+      // silent
+      break;
+  }
+}
+
+// Update a single GPU card (efficient partial update)
+const gpuCache = {};
+function handleGPUUpdate(gpu) {
+  if (!gpu || !gpu.Info) return;
+  gpuCache[gpu.Info.ID] = gpu;
+  // If GPU card exists, update it; otherwise refresh all
+  const existingCard = document.querySelector('[data-gpu-id="' + gpu.Info.ID + '"]');
+  if (existingCard) {
+    existingCard.outerHTML = buildGPUCardHTML(gpu);
+    // Rebind click handlers for new element
+  } else {
+    // First GPU update — render all cards if not yet rendered
+    if (!document.querySelector('[data-gpu-id]')) return;
+  }
+  // Update chart
+  updateChartFromCache();
+  // Update stats count
+  updateStatsFromCache();
+}
+
+function updateChartFromCache() {
+  const gpus = Object.values(gpuCache);
+  const now = new Date().toLocaleTimeString();
+  utilHistory.labels.push(now);
+  let nvidiaUtil = 0, amdUtil = 0;
+  gpus.forEach(g => {
+    if (g.Info && g.Info.Type === 'nvidia') nvidiaUtil = g.Usage ? (g.Usage.Utilization || 0) : 0;
+    if (g.Info && (g.Info.Type === 'amd' || g.Info.Type === 'AMD')) amdUtil = g.Usage ? (g.Usage.Utilization || 0) : 0;
+  });
+  utilHistory.nvidia.push(nvidiaUtil);
+  utilHistory.amd.push(amdUtil);
+  if (utilHistory.labels.length > MAX_HISTORY) {
+    utilHistory.labels.shift(); utilHistory.nvidia.shift(); utilHistory.amd.shift();
+  }
+  if (utilChart) {
+    utilChart.data.labels = utilHistory.labels;
+    utilChart.data.datasets[0].data = utilHistory.nvidia;
+    utilChart.data.datasets[1].data = utilHistory.amd;
+    utilChart.update('none');
+  }
+}
+
+function updateStatsFromCache() {
+  const gpus = Object.values(gpuCache);
+  document.getElementById('stat-gpus').textContent = gpus.length;
+  let running = 0, pending = 0;
+  gpus.forEach(g => {
+    if (g.Usage) {
+      running += g.Usage.RunningTasks || 0;
+    }
+  });
+  document.getElementById('stat-running').textContent = running;
+}
+
+const taskCache = {}; // taskID -> task object
+function handleTaskUpdate(task) {
+  if (!task || !task.ID) return;
+  taskCache[task.ID] = task;
+
+  // Update or insert row in task table
+  const existingRow = document.querySelector('[data-task-row="' + task.ID + '"]');
+  const rowHTML = buildTaskRowHTML(task);
+  if (existingRow) {
+    existingRow.outerHTML = rowHTML;
+  } else {
+    const tbody = document.getElementById('task-tbody');
+    const emptyRow = tbody.querySelector('.no-tasks');
+    if (emptyRow) tbody.innerHTML = rowHTML;
+    else tbody.insertAdjacentHTML('afterbegin', rowHTML);
+  }
+
+  // Update running/pending counts
+  const allTasks = Object.values(taskCache);
+  document.getElementById('stat-running').textContent = allTasks.filter(t => t.Status === 'running').length;
+  document.getElementById('stat-pending').textContent = allTasks.filter(t => t.Status === 'pending').length;
+}
+
+function handleTaskLogWS(payload) {
+  if (!payload) return;
+  const taskID = payload.task_id || payload.TaskID;
+  const line = payload.line || payload.Content || '';
+  if (taskID && line) appendTaskLog(taskID, line);
+}
+
+function buildGPUCardHTML(gpu) {
+  const isNvidia = gpu.Info.Type === 'nvidia';
+  const vramPct = ((gpu.Usage && gpu.Usage.UsedVRAMMB || 0) / gpu.Info.VRAMMB * 100).toFixed(1);
+  return '<div class="gpu-card ' + (isNvidia ? 'gpu-nvidia' : 'gpu-amd') + '" data-gpu-id="' + gpu.Info.ID + '">' +
+    '<div class="gpu-name">' + gpu.Info.Name + '</div>' +
+    '<div class="gpu-type ' + (isNvidia ? 'nvidia' : 'amd') + '">' + gpu.Info.Type.toUpperCase() + ' | ' + gpu.Info.VRAMMB + ' MB VRAM</div>' +
+    '<div class="vram-bar"><div class="vram-bar-fill ' + (isNvidia ? 'nvidia' : 'amd') + '" style="width:' + vramPct + '%"></div></div>' +
+    '<div style="font-size:12px;color:#888;margin-bottom:12px;">VRAM: ' + (gpu.Usage && gpu.Usage.UsedVRAMMB || 0) + ' / ' + gpu.Info.VRAMMB + ' MB (' + vramPct + '%)</div>' +
+    '<div class="gpu-stats">' +
+      '<span class="gpu-stat-label">Running Tasks</span><span class="gpu-stat-value">' + (gpu.Usage && gpu.Usage.RunningTasks || 0) + '</span>' +
+      '<span class="gpu-stat-label">Utilization</span><span class="gpu-stat-value">' + (gpu.Usage && gpu.Usage.Utilization || 0) + '%</span>' +
+      '<span class="gpu-stat-label">Temperature</span><span class="gpu-stat-value">' + (gpu.Usage && gpu.Usage.TemperatureC || '-') + 'C</span>' +
+      '<span class="gpu-stat-label">Power Draw</span><span class="gpu-stat-value">' + (gpu.Usage && gpu.Usage.PowerDrawW || '-') + 'W</span>' +
+    '</div>' +
+  '</div>';
+}
+
+function buildTaskRowHTML(t) {
+  const statusClass = (t.Status || '').toLowerCase();
+  const typeClass = (t.Type || '').toLowerCase();
+  return '<tr data-task-row="' + t.ID + '">' +
+    '<td style="color:#00d4ff;">' + t.ID + '</td>' +
+    '<td>' + (t.Name || '-') + '</td>' +
+    '<td><span class="badge badge-' + typeClass + '">' + (t.Type || '-') + '</span></td>' +
+    '<td>' + (t.Priority || '-') + '</td>' +
+    '<td><span class="badge badge-' + statusClass + '">' + (t.Status || '-') + '</span></td>' +
+    '<td>' + (t.VRAMMB || '-') + '</td>' +
+    '<td>' +
+      (t.Status === 'running' ? '<button class="btn-sm stop" onclick="stopTask(\'' + t.ID + '\')">Stop</button>' : '') +
+      '<button class="btn-sm del" onclick="deleteTask(\'' + t.ID + '\')">Delete</button>' +
+      (t.LogFile ? '<button class="btn-sm" onclick="viewLog(\'' + t.ID + '\')">Log</button>' : '') +
+    '</td>' +
+  '</tr>';
+}
+
+// Override renderGPUs to use data-gpu-id and cache
+const _origRenderGPUs = renderGPUs;
+function renderGPUs(gpus) {
+  gpus.forEach(g => { gpuCache[g.Info.ID] = g; });
+  const grid = document.getElementById('gpu-grid');
+  grid.innerHTML = gpus.map(buildGPUCardHTML).join('');
+}
+
+const _origRenderTasks = renderTasks;
+function renderTasks(tasks) {
+  tasks.forEach(t => { taskCache[t.ID] = t; });
+  const tbody = document.getElementById('task-tbody');
+  if (!tasks || tasks.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="no-tasks" style="padding:20px;color:#666;">No tasks yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = tasks.map(buildTaskRowHTML).join('');
+}
+
+// ── Init ─────────────────────────────────────────────────────────────
+connectWS();
 initSSE();
 refreshAll();
-refreshTimer = setInterval(refreshAll, 5000);
+// Slow fallback poll every 30s (WS handles fast updates)
+if (refreshTimer) clearInterval(refreshTimer);
+refreshTimer = setInterval(refreshAll, 30000);
 </script>
 </body>
 </html>
