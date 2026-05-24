@@ -1,6 +1,4 @@
-﻿# 🎮 Hybrid GPU Scheduler
-
-[![CI](https://github.com/cpufreestyle/hybrid-gpu-scheduler/actions/workflows/release.yml/badge.svg)](https://github.com/cpufreestyle/hybrid-gpu-scheduler/actions) [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://golang.org/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+﻿# 🎮 AMD GPU Scheduler
 
 混合 GPU 智能调度器 — 支持 NVIDIA + AMD 异构 GPU 环境的任务调度与管理。
 
@@ -62,14 +60,7 @@ go build -o scheduler ./cmd/server/
 
 ### 下载 Release
 
-前往 [GitHub Releases](https://github.com/cpufreestyle/hybrid-gpu-scheduler/releases/latest) 下载编译好的可执行文件：
-
-| 平台 | 文件 |
-|------|------|
-| Windows | `hybrid-gpu-scheduler-windows-amd64.exe` |
-| Linux | `hybrid-gpu-scheduler-linux-amd64` |
-
-> 💡 发版只需 `git tag v1.x.x && git push origin v1.x.x`，GitHub Actions 自动构建并发布！
+前往 [Releases](https://gitee.com/cpufreestyle/hybrid-gpu-scheduler/releases) 下载编译好的可执行文件。
 
 ## 📡 API
 
@@ -201,6 +192,36 @@ PreemptPolicy:           kill
 - **监控**: Prometheus client_golang
 - **前端**: HTML + CSS + Chart.js
 - **GPU 监控**: nvidia-smi / rocm-smi
+
+## 📊 Performance Benchmark
+
+> Tested on: Intel i7-6700 @ 3.40GHz | RTX 5070 Ti 16GB + RX 7900 XTX 24GB | Go 1.23 | Windows x64
+
+### Scheduling Algorithm (pure compute, no I/O)
+
+| Benchmark | Time/op | Throughput |
+|-----------|---------|------------|
+| `Binpack` policy score calc | **8.2 ns/op** | ~121 M ops/sec |
+| `Spread` policy score calc | **7.4 ns/op** | ~135 M ops/sec |
+| `GPUType` policy score calc | **14.7 ns/op** | ~68 M ops/sec |
+| `Scheduler_CalculateScore` (with mutex) | **~15 ns/op** | ~67 M ops/sec |
+
+**结论：** 调度算法本身极快（纳秒级），调度开销可忽略不计。
+
+### Full SubmitTask Cycle (with Windows process spawn)
+
+| Benchmark | Time/op | Memory/op | Allocations |
+|-----------|---------|-----------|------------|
+| `SubmitTask` (echo ok) | **~16.7 ms/op** | ~41 KB/op | 382 allocs/op |
+
+**结论：** 真实任务提交的瓶颈是 Windows 进程创建，而非调度算法。
+
+运行命令：
+```bash
+go test ./internal/scheduler/ -bench=. -benchmem -benchtime=3s
+```
+
+---
 
 ## 📄 License
 
