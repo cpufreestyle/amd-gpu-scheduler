@@ -1,0 +1,100 @@
+{{- if and .Values.agent.enabled (eq .Values.mode "agent") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hybrid-gpu-scheduler.fullname" . }}-agent
+  labels:
+    {{- include "hybrid-gpu-scheduler.labels" . | nindent 4 }}
+    component: agent
+spec:
+  replicas: {{ .Values.agent.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "hybrid-gpu-scheduler.selectorLabels" . | nindent 6 }}
+      component: agent
+  template:
+    metadata:
+      labels:
+        {{- include "hybrid-gpu-scheduler.selectorLabels" . | nindent 8 }}
+        component: agent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "hybrid-gpu-scheduler.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range .Values.imagePullSecrets }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: agent
+          image: "{{ .Values.image.repository }}:{{ include "hybrid-gpu-scheduler.tag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --mode=agent
+            - --master={{ .Values.agent.master.url }}
+            {{- if .Values.agent.master.agentHostname }}
+            - --hostname={{ .Values.agent.master.agentHostname }}
+            {{- end }}
+            - --heartbeat-interval={{ .Values.agent.config.heartbeatInterval }}
+            - --gpu-poll-interval={{ .Values.agent.config.gpuPollInterval }}
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.agent.resources | nindent 12 }}
+          env:
+            {{- if .Values.agent.nvidia.enabled }}
+            - name: CUDA_VISIBLE_DEVICES
+              value: {{ .Values.agent.nvidia.deviceIds | default "" | quote }}
+            {{- end }}
+            {{- if .Values.agent.amd.enabled }}
+            - name: ROCR_VISIBLE_DEVICES
+              value: {{ .Values.agent.amd.deviceIds | default "" | quote }}
+            {{- end }}
+            {{- if .Values.agent.nvidia.enabled }}
+            - name: NVIDIA_MIG_CONFIG
+              value: {{ .Values.agent.nvidia.migStrategy | quote }}
+            {{- end }}
+            - name: GOLANG_ENV
+              value: "production"
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.agent.nvidia.enabled }}
+            - name: nvidia-lib
+              mountPath: /usr/local/nvidia
+            {{- end }}
+            {{- if .Values.agent.amd.enabled }}
+            - name: amd-lib
+              mountPath: /opt/rocm
+            {{- end }}
+      volumes:
+        {{- if .Values.agent.nvidia.enabled }}
+        - name: nvidia-lib
+          hostPath:
+            path: /usr/local/nvidia
+        {{- end }}
+        {{- if .Values.agent.amd.enabled }}
+        - name: amd-lib
+          hostPath:
+            path: /opt/rocm
+        {{- end }}
+      {{- if or .Values.agent.nvidia.enabled .Values.agent.amd.enabled }}
+      {{- include "hybrid-gpu-scheduler.gpuTolerations" . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,17 @@
+{{- if and .Values.allInOne.persistence.enabled (eq .Values.mode "allInOne") }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "hybrid-gpu-scheduler.fullname" . }}-data
+  labels:
+    {{- include "hybrid-gpu-scheduler.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.allInOne.persistence.storageClass }}
+  storageClassName: {{ .Values.allInOne.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.allInOne.persistence.size }}
+{{- end }}

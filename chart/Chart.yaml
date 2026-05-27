@@ -1,0 +1,29 @@
+apiVersion: v2
+name: hybrid-gpu-scheduler
+description: |
+  Hybrid GPU Scheduler: intelligent task scheduling across heterogeneous GPUs
+  (NVIDIA + AMD). Supports binpack, spread, and gpu_type strategies with
+  real-time monitoring and multi-node cluster mode.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+home: https://github.com/cpufreestyle/hybrid-gpu-scheduler
+sources:
+  - https://github.com/cpufreestyle/hybrid-gpu-scheduler
+keywords:
+  - gpu
+  - scheduler
+  - nvidia
+  - amd
+  - rocm
+  - cuda
+  - hybrid
+  - kubernetes
+  - helm
+maintainers:
+  - name: cpufreestyle
+    url: https://github.com/cpufreestyle
+icon: https://cdn.jsdelivr.net/gh/cpufreestyle/hybrid-gpu-scheduler/docs/icon.svg
+annotations:
+  category: Infrastructure
+  licenses: Apache-2.0

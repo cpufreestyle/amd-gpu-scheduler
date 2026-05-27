@@ -1,0 +1,201 @@
+# Default values for hybrid-gpu-scheduler.
+
+# ── Global ───────────────────────────────────────────────────────────────────
+image:
+  repository: ghcr.io/cpufreestyle/hybrid-gpu-scheduler
+  pullPolicy: IfNotPresent
+  tag: ""           # defaults to .Chart.AppVersion
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# ── Mode: allInOne | master | agent ──────────────────────────────────────────
+mode: allInOne       # allInOne, master, or agent
+
+# ── All-in-One Mode ───────────────────────────────────────────────────────────
+allInOne:
+  enabled: true
+  replicaCount: 1
+
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: scheduler.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  # Resource limits
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+      amd.com/gpu: 1
+      memory: "4Gi"
+      cpu: "2"
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+
+  # NVIDIA GPU configuration
+  nvidia:
+    enabled: true
+    # MIG strategy: "none", "single", "mixed"
+    migStrategy: "none"
+    # Comma-separated GPU IDs to use (e.g. "0,1")
+    deviceIds: ""
+    # Default CUDA visible devices
+    env:
+      CUDA_VISIBLE_DEVICES: ""   # Set to "" to let scheduler decide
+
+  # AMD GPU configuration
+  amd:
+    enabled: true
+    # ROCm devices (e.g. "0")
+    deviceIds: ""
+    env:
+      ROCR_VISIBLE_DEVICES: ""   # Set to "" to let scheduler decide
+
+  # Scheduler configuration
+  config:
+    # Scheduling policy: binpack | spread | gpu_type
+    policy: binpack
+    # Default task timeout in seconds
+    defaultTimeout: 3600
+    # Max concurrent tasks per GPU
+    maxTasksPerGPU: 4
+
+  persistence:
+    enabled: false
+    storageClass: ""
+    size: "1Gi"
+    mountPath: /data/logs
+
+# ── Master Node ───────────────────────────────────────────────────────────────
+master:
+  enabled: true
+  replicaCount: 1
+
+  service:
+    type: ClusterIP
+    port: 8080
+    clusterIP: ""
+    loadBalancerIP: ""
+    annotations: {}
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: master.scheduler.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  resources:
+    limits:
+      memory: "2Gi"
+      cpu: "1"
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+
+  config:
+    # Max number of registered agents
+    maxAgents: 64
+    # Agent heartbeat timeout (seconds)
+    agentTimeout: 60
+    # Scheduling policy: binpack | spread | gpu_type
+    policy: binpack
+    # Default task timeout in seconds
+    defaultTimeout: 3600
+    # Max concurrent tasks per GPU
+    maxTasksPerGPU: 4
+
+# ── Agent Node ────────────────────────────────────────────────────────────────
+agent:
+  enabled: true
+  replicaCount: 1
+
+  # Master endpoint (required for agent mode)
+  master:
+    url: "http://master:8080"
+    # Agent registers with this hostname (change if master is not in-cluster)
+    agentHostname: ""
+
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+      amd.com/gpu: 1
+      memory: "2Gi"
+      cpu: "1"
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+
+  nvidia:
+    enabled: true
+    migStrategy: "none"
+    deviceIds: ""
+    env:
+      CUDA_VISIBLE_DEVICES: ""
+
+  amd:
+    enabled: true
+    deviceIds: ""
+    env:
+      ROCR_VISIBLE_DEVICES: ""
+
+  config:
+    # Heartbeat interval in seconds
+    heartbeatInterval: 10
+    # GPU monitoring interval in seconds
+    gpuPollInterval: 5
+
+# ── Security ──────────────────────────────────────────────────────────────────
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop: ["ALL"]
+    add: ["NET_ADMIN"]
+
+# ── Node affinity ──────────────────────────────────────────────────────────────
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ── Pod Disruption Budget ─────────────────────────────────────────────────────
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# ── Autoscaling ───────────────────────────────────────────────────────────────
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80

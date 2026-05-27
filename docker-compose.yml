@@ -1,0 +1,156 @@
+# ============================================================
+# hybrid-gpu-scheduler  —  docker-compose 快速部署
+#
+# 架构：
+#   ┌──────────────────────────────────────────┐
+#   │  master  (192.168.1.100)                 │
+#   │  ┌──────────────┐  ┌──────────────────┐ │
+#   │  │  master:8080 │  │  agent:8081       │ │
+#   │  │  (调度主节点)  │  │  (本机 GPU)       │ │
+#   │  └──────────────┘  └──────────────────┘ │
+#   └──────────────────────────────────────────┘
+#             ↑ heartbeat (5s)
+#   ┌──────────────────────────────────────────┐
+#   │  worker-1  (192.168.1.101)               │
+#   │  ┌────────────────────────────────────┐  │
+#   │  │  agent:8081  (远程 GPU)              │  │
+#   │  └────────────────────────────────────┘  │
+#   └──────────────────────────────────────────┘
+#
+# 使用：
+#   # 单机（all-in-one）
+#   cp .env.single .env
+#   docker compose up -d
+#
+#   # 多机：先改 env.master，再分发 worker-env 到各节点
+#   docker compose --env-file envs/env.master up -d master
+#   docker compose --env-file envs/env.worker1 up -d agent
+# ============================================================
+
+services:
+
+  # ── All-in-one 单机模式 ───────────────────────────────
+  scheduler:
+    image: ghcr.io/cpufreestyle/hybrid-gpu-scheduler:all-in-one
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: all-in-one
+    container_name: hybrid-gpu-scheduler
+    environment:
+      - SERVICE=scheduler
+      # GPU monitoring interval (seconds)
+      - GPU_MONITOR_INTERVAL=5
+      # Default scheduling policy (binpack|spread|gpu_type)
+      - DEFAULT_POLICY=binpack
+      # Enable GPU tools discovery
+      - NVIDIA_SMI_PATH=/usr/bin/nvidia-smi
+      - ROCM_SMI_PATH=/opt/rocm/bin/rocm-smi
+      # Optional: bind to specific IP
+      # - BIND_ADDR=192.168.1.100
+    ports:
+      - "8080:8080"   # scheduler REST API + dashboard
+      - "8081:8081"   # agent heartbeat port
+    volumes:
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml:ro
+    # GPU access — NVIDIA
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # GPU access — AMD (ROCm)
+    #volumes:
+    #  - /dev/kfd:/dev/kfd
+    #  - /dev/dri:/dev/dri
+    #  - /opt/rocm:/opt/rocm:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Master 主节点（多机部署时使用）──────────────────────
+  master:
+    image: ghcr.io/cpufreestyle/hybrid-gpu-scheduler:master
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: master
+    container_name: hybrid-gpu-master
+    environment:
+      - SERVICE=master
+      - MASTER_PORT=8080
+      - CLUSTER_ID=default
+      # 清理离线节点的时间阈值（秒）
+      - NODE_TIMEOUT=30
+      # Agent 节点配置（逗号分隔）
+      # - AGENT_NODES=worker1:8081,worker2:8081
+    ports:
+      - "8080:8080"   # master API
+      - "8081:8081"   # agent port (本机 GPU 任务也走这里)
+    volumes:
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml:ro
+    # Master 节点也需要本地 GPU（调度本机任务）
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Agent 工作节点（部署在各 GPU 机器上）────────────────
+  agent:
+    image: ghcr.io/cpufreestyle/hybrid-gpu-scheduler:agent
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: agent
+    container_name: hybrid-gpu-agent
+    environment:
+      - SERVICE=agent
+      # 必须：Master 地址（改为实际 master IP）
+      - MASTER_URL=http://192.168.1.100:8080
+      # 本机标识（可选，默认用 hostname）
+      - AGENT_NAME=worker-1
+      # 心跳间隔（秒）
+      - AGENT_HEARTBEAT=5
+      # 本机 agent 端口
+      - AGENT_PORT=8081
+      # 机房/区域标签（用于调度策略）
+      - AGENT_REGION=us-west
+    ports:
+      - "8081:8081"   # agent heartbeat
+    volumes:
+      - ./logs:/app/logs
+    # GPU access — NVIDIA
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  default:
+    name: gpu-cluster
+    driver: bridge

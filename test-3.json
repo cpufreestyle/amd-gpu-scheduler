@@ -1,0 +1,7 @@
+{
+  "name": "test-3-timeout",
+  "type": "inference",
+  "command": "ping -n 6 127.0.0.1 > nul && echo Done",
+  "vram_mb": 512,
+  "timeout": 3
+}

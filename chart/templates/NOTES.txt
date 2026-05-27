@@ -1,0 +1,85 @@
+{{- if eq .Values.mode "allInOne" }}
+{{- $fullName := include "hybrid-gpu-scheduler.fullname" . -}}
+## Hybrid GPU Scheduler — All-in-One Mode
+
+**Release:** {{ .Release.Name }}
+**Namespace:** {{ .Release.Namespace }}
+
+### Quick Start
+
+```bash
+# Forward the service port to your local machine
+kubectl port-forward -n {{ .Release.Namespace }} svc/{{ $fullName }} 8080:8080
+
+# Open the Dashboard
+open http://localhost:8080/dashboard
+
+# Submit a task
+curl -X POST http://localhost:8080/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "test-gpu-task",
+    "type": "inference",
+    "command": "nvidia-smi",
+    "vram_mb": 1024,
+    "timeout": 60
+  }'
+```
+
+### Available Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/dashboard` | GET | Web UI |
+| `/api/gpus` | GET | GPU status |
+| `/api/tasks` | GET/POST | Task list / submit |
+| `/api/tasks/:id` | GET/DELETE | Task detail / delete |
+| `POST /api/tasks/:id/stop` | POST | Stop running task |
+| `/api/scheduler/policy` | GET/POST | Scheduling policy |
+| `/metrics` | GET | Prometheus metrics |
+
+### GPU Scheduling Policy
+
+Currently: **{{ .Values.allInOne.config.policy }}**
+
+Change it via the Dashboard or API:
+```bash
+curl -X POST http://localhost:8080/api/scheduler/policy \
+  -H "Content-Type: application/json" \
+  -d '{"policy":"spread"}'
+```
+
+Policies: `binpack` (consolidate) | `spread` (distribute) | `gpu_type` (type-matched)
+
+{{- end }}
+
+{{- if eq .Values.mode "master" }}
+{{- $fullName := include "hybrid-gpu-scheduler.fullname" . -}}
+## Hybrid GPU Scheduler — Master Node
+
+**Release:** {{ .Release.Name }}
+**Namespace:** {{ .Release.Namespace }}
+
+The master node is running and waiting for agents to connect.
+Deploy agents with:
+```bash
+helm upgrade --install hgs-agent ./hybrid-gpu-scheduler \
+  --set mode=agent \
+  --set agent.master.url=http://{{ $fullName }}:{{ .Values.master.service.port }}
+```
+
+{{- end }}
+
+{{- if eq .Values.mode "agent" }}
+## Hybrid GPU Scheduler — Agent Node
+
+**Release:** {{ .Release.Name }}
+**Namespace:** {{ .Release.Namespace }}
+
+Agent is configured to connect to: **{{ .Values.agent.master.url }}**
+
+{{- end }}
+
+---
+For more configuration options, see `values.yaml`.
+Report issues at: https://github.com/cpufreestyle/hybrid-gpu-scheduler

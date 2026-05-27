@@ -1,0 +1,7 @@
+{
+  "name": "test-1-simple",
+  "type": "inference",
+  "command": "echo Test 1: Simple command && ping -n 2 127.0.0.1 > nul",
+  "vram_mb": 1024,
+  "timeout": 10
+}

@@ -1,0 +1,32 @@
+{{- $svc := .Values.allInOne -}}
+{{- if and .Values.master.enabled (eq .Values.mode "master") }}
+{{- $svc = .Values.master -}}
+{{- end }}
+{{- if $svc.service -}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hybrid-gpu-scheduler.fullname" . }}
+  labels:
+    {{- include "hybrid-gpu-scheduler.labels" . | nindent 4 }}
+  {{- with $svc.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $svc.service.type }}
+  {{- if and (eq $svc.service.type "ClusterIP") $svc.service.clusterIP }}
+  clusterIP: {{ $svc.service.clusterIP }}
+  {{- end }}
+  {{- if and (eq $svc.service.type "LoadBalancer") $svc.service.loadBalancerIP }}
+  loadBalancerIP: {{ $svc.service.loadBalancerIP }}
+  {{- end }}
+  ports:
+    - port: {{ $svc.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "hybrid-gpu-scheduler.selectorLabels" . | nindent 4 }}
+{{- end }}

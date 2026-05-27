@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>💕 520 心动调度器 | Love Scheduler</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin:0; padding:0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #1a0a14 0%, #2a1020 50%, #0a1020 100%); color: #ffd0e0; min-height: 100vh; position: relative; overflow-x: hidden; }
+  
+  /* Floating hearts background */
+  .heart-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: hidden; }
+  .floating-heart { position: absolute; font-size: 20px; opacity: 0.15; animation: floatUp 15s infinite linear; }
+  @keyframes floatUp { 0% { transform: translateY(100vh) rotate(0deg); opacity: 0; } 10% { opacity: 0.15; } 90% { opacity: 0.15; } 100% { transform: translateY(-100px) rotate(360deg); opacity: 0; } }
+  
+  /* 520 Banner */
+  .love-banner { background: linear-gradient(135deg, #ff4466 0%, #ff6699 50%, #ff88aa 100%); padding: 16px 36px; text-align: center; position: relative; z-index: 10; box-shadow: 0 4px 30px rgba(255, 68, 102, 0.3); }
+  .love-banner h2 { font-size: 28px; font-weight: 800; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.3); margin-bottom: 6px; }
+  .love-banner p { font-size: 15px; color: rgba(255,255,255,0.9); }
+  .love-banner .date { font-size: 48px; font-weight: 900; color: #fff; letter-spacing: 8px; text-shadow: 0 0 30px rgba(255,255,255,0.5); margin: 10px 0; }
+  
+  header { background: linear-gradient(135deg, #2a1020 0%, #3a1830 100%); padding: 16px 36px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #4a2040; position: sticky; top:0; z-index: 100; backdrop-filter: blur(8px); }
+  header h1 { font-size: 20px; font-weight: 700; background: linear-gradient(90deg, #ff6699, #ff88aa, #ffaacc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .status-badge { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #ff99aa; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff4466; animation: heartPulse 1.5s infinite; }
+  @keyframes heartPulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.6; transform:scale(1.3); } }
+  .refresh-btn { background: linear-gradient(135deg, #ff4466, #ff6699); color:#fff; border:none; padding: 7px 16px; border-radius: 8px; cursor:pointer; font-size:13px; font-weight:600; transition: all 0.2s; }
+  .refresh-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(255,68,102,0.5); }
+
+  .container { max-width: 1500px; margin:0 auto; padding: 24px 36px; position: relative; z-index: 1; }
+
+  /* Stats cards */
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+  .stat-card { background: linear-gradient(145deg, #2a1020, #3a1830); border:1px solid #4a2040; border-radius: 14px; padding: 20px 22px; position: relative; overflow: hidden; }
+  .stat-card::after { content:''; position:absolute; top:0; left:0; right:0; height:2px; border-radius:14px 14px 0 0; }
+  .stat-card:nth-child(1)::after { background: linear-gradient(90deg, #ff4466, #ff6699); }
+  .stat-card:nth-child(2)::after { background: linear-gradient(90deg, #ff6699, #ff88aa); }
+  .stat-card:nth-child(3)::after { background: linear-gradient(90deg, #ff88aa, #ffaacc); }
+  .stat-card:nth-child(4)::after { background: linear-gradient(90deg, #ffaacc, #ffccee); }
+  .stat-label { font-size:12px; color:#aa6677; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; font-weight:600; }
+  .stat-value { font-size:38px; font-weight:800; line-height:1; }
+  .stat-card:nth-child(1) .stat-value { color:#ff6699; }
+  .stat-card:nth-child(2) .stat-value { color:#ff88aa; }
+  .stat-card:nth-child(3) .stat-value { color:#ffaacc; }
+  .stat-card:nth-child(4) .stat-value { color:#ffccee; }
+  .stat-sub { font-size:12px; color:#885566; margin-top:6px; }
+
+  /* Section title */
+  .section-title { font-size:17px; font-weight:700; margin: 28px 0 18px; display:flex; align-items:center; gap:10px; }
+  .section-title::before { content:'💕'; font-size:18px; }
+
+  /* GPU grid */
+  .gpu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 20px; margin-bottom: 28px; }
+  .gpu-card { background: linear-gradient(145deg, #2a1020, #3a1830); border:1px solid #4a2040; border-radius: 16px; padding: 22px; position:relative; overflow:hidden; transition: all 0.3s; }
+  .gpu-card:hover { border-color:#6a3050; transform: translateY(-2px); box-shadow: 0 8px 30px rgba(255,68,102,0.2); }
+  .gpu-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
+  .gpu-heart::before { background: linear-gradient(90deg, #ff4466, #ff6699, #ff4466); background-size:200% 100%; animation: shimmer 3s infinite; }
+  .gpu-rose::before { background: linear-gradient(90deg, #ff6699, #ff88aa, #ff6699); background-size:200% 100%; animation: shimmer 3s infinite; }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  .gpu-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+  .gpu-name { font-size:16px; font-weight:700; }
+  .gpu-type-badge { font-size:11px; padding:3px 10px; border-radius:20px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+  .gpu-type-badge.heart { background:#3a1020; color:#ff6699; border:1px solid #5a2040; }
+  .gpu-type-badge.rose { background:#3a1830; color:#ff88aa; border:1px solid #5a3050; }
+  .gpu-vram-text { font-size:13px; color:#aa6677; margin-bottom:6px; display:flex; justify-content:space-between; }
+  .vram-bar { background:#1a0810; border-radius:8px; height:10px; margin-bottom:16px; overflow:hidden; }
+  .vram-fill { height:100%; border-radius:8px; transition: width 0.8s cubic-bezier(0.4,0,0.2,1); }
+  .vram-fill.heart { background:linear-gradient(90deg, #ff4466, #ff6699); }
+  .vram-fill.rose { background:linear-gradient(90deg, #ff6699, #ff88aa); }
+  .gpu-stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px; margin-bottom:16px; }
+  .gpu-stat { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #2a1020; }
+  .gpu-stat-label { color:#aa6677; }
+  .gpu-stat-value { font-weight:600; }
+  .chart-container { height:120px; margin-top:8px; }
+
+  /* Task table */
+  .table-card { background:linear-gradient(145deg, #2a1020, #3a1830); border:1px solid #4a2040; border-radius:16px; padding:0; overflow:hidden; margin-bottom:28px; }
+  .table-header { padding:18px 22px 14px; border-bottom:1px solid #4a2040; display:flex; justify-content:space-between; align-items:center; }
+  .table-title { font-size:15px; font-weight:700; }
+  .task-table { width:100%; border-collapse:collapse; }
+  .task-table th { text-align:left; padding:11px 18px; font-size:11px; color:#aa6677; text-transform:uppercase; letter-spacing:1px; border-bottom:1px solid #4a2040; font-weight:700; }
+  .task-table td { padding:12px 18px; font-size:13.5px; border-bottom:1px solid #2a1020; }
+  .task-table tbody tr { transition:background 0.2s; }
+  .task-table tbody tr:hover { background:#3a1830; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11.5px; font-weight:700; }
+  .badge-love { background:#3a1020; color:#ff6699; border:1px solid #5a2040; }
+  .badge-hug { background:#3a1830; color:#ff88aa; border:1px solid #5a3050; }
+  .badge-waiting { background:#3a1020; color:#ffaacc; border:1px solid #5a3050; }
+  .badge-beating { background:#2a1020; color:#ff4466; border:1px solid #4a2040; }
+  .badge-embraced { background:#1a1820; color:#ffccee; border:1px solid #3a3050; }
+  .badge-missed { background:#2a0810; color:#ff4466; border:1px solid #4a1030; }
+  .badge-lost { background:#2a0810; color:#ff6666; border:1px solid #4a1030; }
+
+  /* Policy card */
+  .policy-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-bottom:28px; }
+  .policy-card { background:linear-gradient(145deg, #2a1020, #3a1830); border:1px solid #4a2040; border-radius:14px; padding:18px 20px; }
+  .policy-card h4 { font-size:14px; font-weight:700; margin-bottom:6px; }
+  .policy-card p { font-size:13px; color:#aa6677; margin-bottom:14px; }
+  .policy-btn { width:100%; padding:9px; border:1px solid #5a3050; border-radius:8px; background:transparent; color:#aa6677; cursor:pointer; font-size:13px; font-weight:600; transition:all 0.25s; }
+  .policy-btn:hover { border-color:#ff6699; color:#ffd0e0; }
+  .policy-btn.active { border-color:#ff4466; background:linear-gradient(135deg, #3a1020, #2a0810); color:#fff; }
+
+  .loading { color:#aa6677; font-style:italic; padding:20px; }
+  .error { color:#ff4466; padding:20px; }
+
+  /* Footer love message */
+  .love-footer { text-align: center; padding: 30px; color: #aa6677; font-size: 14px; }
+  .love-footer .big-heart { font-size: 40px; animation: heartPulse 1.5s infinite; display: inline-block; margin-bottom: 10px; }
+
+  /* Responsive */
+  @media(max-width:900px) {
+    .stats-row { grid-template-columns: repeat(2,1fr); }
+    .container { padding:16px; }
+    header { padding:12px 16px; }
+    .love-banner { padding: 12px 16px; }
+    .love-banner .date { font-size: 36px; letter-spacing: 4px; }
+  }
+  @media(max-width:600px) {
+    .stats-row { grid-template-columns: 1fr; }
+    .gpu-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Floating Hearts Background -->
+<div class="heart-bg" id="heart-bg"></div>
+
+<!-- 520 Love Banner -->
+<div class="love-banner">
+  <h2>💕 520 心动调度器 💕</h2>
+  <div class="date">5.20</div>
+  <p>愿每一份爱意都被温柔调度，每一个心动都能找到归宿 🌹</p>
+</div>
+
+<header>
+  <h1>💕 Love Task Scheduler</h1>
+  <div class="header-right">
+    <span class="status-badge"><span class="status-dot"></span> 心跳在线</span>
+    <button class="refresh-btn" onclick="refreshAll()">💕 刷新爱意</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Stats Row -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">💕 心动 GPU</div>
+      <div class="stat-value" id="stat-gpus">-</div>
+      <div class="stat-sub" id="stat-gpu-detail"></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">💗 正在心动</div>
+      <div class="stat-value" id="stat-running">-</div>
+      <div class="stat-sub" id="stat-running-detail"></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">💝 等待心动</div>
+      <div class="stat-value" id="stat-pending">-</div>
+      <div class="stat-sub" id="stat-pending-detail"></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">💞 爱情策略</div>
+      <div class="stat-value" id="stat-policy" style="font-size:24px;">-</div>
+      <div class="stat-sub" id="stat-policy-desc"></div>
+    </div>
+  </div>
+
+  <!-- GPU Cards -->
+  <div class="section-title">心动 GPU 资源</div>
+  <div class="gpu-grid" id="gpu-grid">
+    <div class="loading">加载心动 GPU...</div>
+  </div>
+
+  <!-- Task Table -->
+  <div class="section-title">爱意任务队列</div>
+  <div class="table-card">
+    <div class="table-header">
+      <span class="table-title">💕 所有爱意任务</span>
+      <span style="font-size:13px;color:#aa6677;" id="task-count"></span>
+    </div>
+    <table class="task-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>爱意名称</th>
+          <th>类型</th>
+          <th>心动值</th>
+          <th>心动 GPU</th>
+          <th>状态</th>
+          <th>爱意容量</th>
+          <th>心动分数</th>
+        </tr>
+      </thead>
+      <tbody id="task-tbody">
+        <tr><td colspan="8" class="loading" style="padding:20px;">加载爱意任务...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Policy -->
+  <div class="section-title">爱情调度策略</div>
+  <div class="policy-grid">
+    <div class="policy-card">
+      <h4>💕 专注模式 (Binpack)</h4>
+      <p>集中爱意，用最少的心动承载最多的甜蜜，减少碎片化</p>
+      <button class="policy-btn" id="btn-binpack" onclick="setPolicy('binpack')">激活策略</button>
+    </div>
+    <div class="policy-card">
+      <h4>💗 均衡模式 (Spread)</h4>
+      <p>分散爱意，每颗心都得到温暖的关怀，避免单点过载</p>
+      <button class="policy-btn" id="btn-spread" onclick="setPolicy('spread')">激活策略</button>
+    </div>
+    <div class="policy-card">
+      <h4>💘 缘分模式 (GPU Type)</h4>
+      <p>类型优先调度，让每个爱意找到最适合的心动归宿</p>
+      <button class="policy-btn" id="btn-gpu-type" onclick="setPolicy('gpu_type')">激活策略</button>
+    </div>
+  </div>
+
+  <!-- Love Footer -->
+  <div class="love-footer">
+    <div class="big-heart">💕</div>
+    <p>520 快乐！愿你的每一份爱意都能被温柔以待 💕</p>
+    <p style="margin-top:8px;font-size:12px;color:#885566;">Made with 💖 by OpenClaw</p>
+  </div>
+</div>
+
+<script>
+// ============ Floating Hearts ============
+function createFloatingHearts() {
+  const container = document.getElementById('heart-bg');
+  const hearts = ['💕', '💗', '💖', '💝', '💘', '❤️', '💞', '💟', '🌸', '🌹'];
+  for (let i = 0; i < 20; i++) {
+    const heart = document.createElement('div');
+    heart.className = 'floating-heart';
+    heart.textContent = hearts[Math.floor(Math.random() * hearts.length)];
+    heart.style.left = Math.random() * 100 + '%';
+    heart.style.animationDelay = Math.random() * 15 + 's';
+    heart.style.fontSize = (15 + Math.random() * 15) + 'px';
+    container.appendChild(heart);
+  }
+}
+createFloatingHearts();
+
+// ============ State ============
+let gpuHistory = {};
+let chartInstances = {};
+const MAX_HISTORY = 60;
+
+// ============ API ============
+async function api(path) {
+  const r = await fetch(path);
+  const j = await r.json();
+  if (!j.success) throw new Error(JSON.stringify(j));
+  return j;
+}
+
+// ============ Format Helpers ============
+function fmtVRAM(mb) { return mb >= 1024 ? (mb/1024).toFixed(1)+' GB' : mb+' MB'; }
+function gpuTypeToLove(type) {
+  if (type === 'nvidia') return 'heart';
+  return 'rose';
+}
+function taskTypeToLove(type) {
+  const map = {
+    'training': 'love',
+    'inference': 'hug',
+    'compute': 'care'
+  };
+  return map[type] || type;
+}
+function statusToLove(status) {
+  const map = {
+    'running': 'beating',
+    'pending': 'waiting',
+    'completed': 'embraced',
+    'timeout': 'missed',
+    'failed': 'lost'
+  };
+  return map[status] || status;
+}
+
+// ============ Refresh All ============
+async function refreshAll() {
+  try {
+    const [gpusRes, tasksRes, statusRes, policyRes] = await Promise.all([
+      api('/api/gpus'),
+      api('/api/tasks'),
+      api('/api/scheduler/status'),
+      api('/api/scheduler/policy'),
+    ]);
+    renderStats(statusRes);
+    renderGPUs(gpusRes.gpus);
+    renderTasks(tasksRes.tasks);
+    renderPolicy(policyRes);
+  } catch(e) {
+    console.error('refreshAll error:', e);
+  }
+}
+
+// ============ Stats ============
+function renderStats(s) {
+  document.getElementById('stat-gpus').textContent = s.total_gpus;
+  document.getElementById('stat-gpu-detail').textContent = '💕 多颗心动 💗';
+  document.getElementById('stat-running').textContent = s.running_tasks;
+  document.getElementById('stat-running-detail').textContent = s.running_tasks > 0 ? '💗 正在心动' : '💤 等待中';
+  document.getElementById('stat-pending').textContent = s.pending_tasks;
+  document.getElementById('stat-pending-detail').textContent = s.pending_tasks > 0 ? '💝 等待心动' : '💕 清空';
+  document.getElementById('stat-policy').textContent = s.policy === 'binpack' ? '💕 专注' : s.policy === 'spread' ? '💗 均衡' : '💘 缘分';
+}
+
+// ============ GPU Cards ============
+function renderGPUs(gpus) {
+  const grid = document.getElementById('gpu-grid');
+  grid.innerHTML = '';
+
+  gpus.forEach(g => {
+    const id = g.Info.ID;
+    const loveType = gpuTypeToLove(g.Info.Type);
+    const vramUsed = g.Usage.UsedVRAMMB || 0;
+    const vramTotal = g.Info.VRAMMB || 1;
+    const vramPct = ((vramUsed / vramTotal) * 100).toFixed(1);
+    const util = g.Usage.UtilizationPct || 0;
+    const temp = g.Usage.TemperatureC || 0;
+    const power = g.Usage.PowerDrawW || 0;
+    const score = g.Score || 0;
+
+    if (!gpuHistory[id]) {
+      gpuHistory[id] = { labels: [], util: [], vram: [] };
+    }
+    const hist = gpuHistory[id];
+    const now = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    hist.labels.push(now);
+    hist.util.push(util);
+    hist.vram.push(parseFloat(vramPct));
+    if (hist.labels.length > MAX_HISTORY) {
+      hist.labels.shift(); hist.util.shift(); hist.vram.shift();
+    }
+
+    const card = document.createElement('div');
+    card.className = 'gpu-card gpu-' + loveType;
+    card.innerHTML = `
+      <div class="gpu-header">
+        <div>
+          <div class="gpu-name">${g.Info.Name}</div>
+        </div>
+        <span class="gpu-type-badge ${loveType}">${loveType === 'heart' ? '💕 心动' : '💗 玫瑰'}</span>
+      </div>
+      <div class="gpu-vram-text">
+        <span>爱意容量 ${fmtVRAM(vramUsed)} / ${fmtVRAM(vramTotal)}</span>
+        <span style="color:#ff6699;font-weight:700;">${vramPct}%</span>
+      </div>
+      <div class="vram-bar"><div class="vram-fill ${loveType}" style="width:${vramPct}%"></div></div>
+      <div class="gpu-stats-grid">
+        <div class="gpu-stat"><span class="gpu-stat-label">心动强度</span><span class="gpu-stat-value" style="color:${util>80?'#ff4466':util>50?'#ffaacc':'#ff88aa'}">${util}%</span></div>
+        <div class="gpu-stat"><span class="gpu-stat-label">正在承载</span><span class="gpu-stat-value">${g.Usage.RunningTasks||0} 💕</span></div>
+        <div class="gpu-stat"><span class="gpu-stat-label">心动温度</span><span class="gpu-stat-value" style="color:${temp>80?'#ff4466':temp>60?'#ffaacc':'#ff88aa'}">${temp>0?temp+'°C':'--'}</span></div>
+        <div class="gpu-stat"><span class="gpu-stat-label">心动功率</span><span class="gpu-stat-value">${power>0?power+'W':'--'}</span></div>
+        <div class="gpu-stat"><span class="gpu-stat-label">心动分数</span><span class="gpu-stat-value" style="color:#ff6699;">${score.toFixed(1)} 💖</span></div>
+        <div class="gpu-stat"><span class="gpu-stat-label">总容量</span><span class="gpu-stat-value">${fmtVRAM(vramTotal)}</span></div>
+      </div>
+      <div class="chart-container">
+        <canvas id="chart-${id}"></canvas>
+      </div>
+    `;
+    grid.appendChild(card);
+
+    requestAnimationFrame(() => {
+      renderChart(id, loveType, hist);
+    });
+  });
+}
+
+// ============ Chart.js ============
+function renderChart(gpuId, loveType, hist) {
+  const canvas = document.getElementById(`chart-${gpuId}`);
+  if (!canvas) return;
+
+  if (chartInstances[gpuId]) {
+    chartInstances[gpuId].destroy();
+  }
+
+  const color = loveType === 'heart' ? '#ff4466' : '#ff6699';
+  const colorFade = loveType === 'heart' ? 'rgba(255,68,102,0.1)' : 'rgba(255,102,153,0.1)';
+
+  chartInstances[gpuId] = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: hist.labels,
+      datasets: [{
+        label: '心动强度 %',
+        data: hist.util,
+        borderColor: color,
+        backgroundColor: colorFade,
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHitRadius: 10,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: true, mode: 'index', intersect: false }
+      },
+      scales: {
+        x: {
+          display: true,
+          ticks: { color: '#885566', font: {size:10}, maxTicksLimit: 6 },
+          grid: { color: '#2a1020' }
+        },
+        y: {
+          display: true,
+          min: 0, max: 100,
+          ticks: { color: '#885566', font: {size:10}, callback: v => v+'%' },
+          grid: { color: '#2a1020' }
+        }
+      }
+    }
+  });
+}
+
+// ============ Tasks ============
+function renderTasks(tasks) {
+  const tbody = document.getElementById('task-tbody');
+  document.getElementById('task-count').textContent = tasks ? tasks.length + ' 💕' : '0 💕';
+
+  if (!tasks || tasks.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="padding:20px;color:#aa6677;text-align:center;">还没有爱意任务哦~ 用 POST /api/tasks 发送你的心动吧 💕</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  tasks.forEach(t => {
+    const tr = document.createElement('tr');
+    const loveType = taskTypeToLove(t.Type);
+    const loveStatus = statusToLove(t.Status);
+    tr.innerHTML = `
+      <td style="color:#ff88aa;font-family:monospace;font-size:12px;">${t.ID}</td>
+      <td>${t.Name||'未命名心动'}</td>
+      <td><span class="badge badge-${loveType}">${loveType === 'love' ? '💕 深爱' : loveType === 'hug' ? '💗 拥抱' : '💝 关怀'}</span></td>
+      <td><span style="font-weight:700;color:${t.Priority>5?'#ff6699':t.Priority>0?'#ffaacc':'#aa6677'}">${'💕'.repeat(Math.min(t.Priority, 5))}</span></td>
+      <td>${t.GPUReq >= 0 ? '<span style="color:#ff6699;">心动 GPU '+t.GPUReq+'</span>' : '<span style="color:#aa6677;">—</span>'}</td>
+      <td><span class="badge badge-${loveStatus}">${loveStatus === 'beating' ? '💗 心动中' : loveStatus === 'waiting' ? '💝 等待中' : loveStatus === 'embraced' ? '💕 已拥抱' : loveStatus === 'missed' ? '💔 错过' : '💝 ' + t.Status}</span></td>
+      <td>${t.VRAMMB ? fmtVRAM(t.VRAMMB) : '—'}</td>
+      <td style="font-family:monospace;font-size:12px;color:#ff6699;">${t.Score ? t.Score.toFixed(1) + ' 💖' : '—'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ============ Policy ============
+function renderPolicy(p) {
+  const policyNames = {
+    'binpack': '💕 专注',
+    'spread': '💗 均衡',
+    'gpu_type': '💘 缘分'
+  };
+  document.getElementById('stat-policy').textContent = policyNames[p.policy] || p.policy;
+  ['binpack','spread','gpu_type'].forEach(k => {
+    const btn = document.getElementById('btn-' + k);
+    const isActive = k === p.policy;
+    btn.classList.toggle('active', isActive);
+    btn.textContent = isActive ? '💖 已激活' : '激活策略';
+  });
+}
+
+async function setPolicy(policy) {
+  try {
+    await fetch('/api/scheduler/policy', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({policy})
+    });
+    refreshAll();
+  } catch(e) { console.error(e); }
+}
+
+// ============ Init ============
+refreshAll();
+setInterval(refreshAll, 5000);
+</script>
+</body>
+</html>

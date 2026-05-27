@@ -1,0 +1,47 @@
+{{- $svc := .Values.allInOne -}}
+{{- if eq .Values.mode "master" }}
+{{- $svc = .Values.master -}}
+{{- end }}
+{{- if $svc.ingress.enabled -}}
+{{- $fullName := include "hybrid-gpu-scheduler.fullname" . -}}
+{{- $svcPort := $svc.service.port -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "hybrid-gpu-scheduler.labels" . | nindent 4 }}
+  {{- with $svc.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if $svc.ingress.className }}
+  ingressClassName: {{ $svc.ingress.className }}
+  {{- end }}
+  {{- if $svc.ingress.tls }}
+  tls:
+    {{- range $svc.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range $svc.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $svcPort }}
+          {{- end }}
+    {{- end }}
+{{- end }}

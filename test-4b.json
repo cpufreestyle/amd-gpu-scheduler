@@ -1,0 +1,7 @@
+{
+  "name": "test-4-concurrent-b",
+  "type": "inference",
+  "command": "echo Concurrent B started && ping -n 3 127.0.0.1 > nul && echo Concurrent B done",
+  "vram_mb": 1024,
+  "timeout": 15
+}

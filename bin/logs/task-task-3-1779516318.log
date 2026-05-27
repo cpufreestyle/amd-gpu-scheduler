@@ -1,0 +1,9 @@
+=== GPU Isolation Test ===
+PID: 42588
+CUDA_VISIBLE_DEVICES: 0
+ROCR_VISIBLE_DEVICES: 0
+All env vars with GPU:
+  CUDA_VISIBLE_DEVICES=0
+  ROCR_VISIBLE_DEVICES=0
+=== End ===
+done
